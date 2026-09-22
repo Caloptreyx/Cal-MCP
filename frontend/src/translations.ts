@@ -15,6 +15,7 @@ const translations = defineTranslations({
     },
     setup: {
       title: 'Set up your client',
+      agent: 'Paste this into your AI agent, such as Claude Code, Cursor or Codex, and it adds the server itself.',
       claudeCode: 'Run this in a terminal.',
       cursor: 'Add this to ~/.cursor/mcp.json.',
       vscode: 'Add this to .vscode/mcp.json in your project.',

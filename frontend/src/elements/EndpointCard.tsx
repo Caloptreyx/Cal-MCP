@@ -22,7 +22,7 @@ export default function EndpointCard({ url }: { url: string }) {
     >
       <Stack>
         <Text size='sm'>{t('description', {})}</Text>
-        <Code block className='break-all whitespace-pre-wrap'>
+        <Code block className='whitespace-pre-wrap [overflow-wrap:anywhere]'>
           {url}
         </Code>
         <Group justify='space-between'>
