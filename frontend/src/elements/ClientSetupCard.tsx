@@ -1,6 +1,5 @@
 import { faTerminal } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { useMediaQuery } from '@mantine/hooks';
 import { useState } from 'react';
 import Code from '@/elements/Code.tsx';
 import SegmentedControl from '@/elements/SegmentedControl.tsx';
@@ -14,7 +13,6 @@ import CopyAction from './CopyAction.tsx';
 export default function ClientSetupCard({ url }: { url: string }) {
   const { t } = useExtTranslations();
   const [client, setClient] = useState<Client>('agent');
-  const narrow = useMediaQuery('(max-width: 40em)');
   const text = snippet(client, url);
 
   return (
@@ -24,13 +22,19 @@ export default function ClientSetupCard({ url }: { url: string }) {
       rightSection={<CopyAction value={text} />}
     >
       <Stack>
-        <SegmentedControl
-          fullWidth
-          orientation={narrow ? 'vertical' : 'horizontal'}
-          data={CLIENTS}
-          value={client}
-          onChange={(value) => setClient(value as Client)}
-        />
+        <div className='@container'>
+          {(['horizontal', 'vertical'] as const).map((orientation) => (
+            <SegmentedControl
+              key={orientation}
+              fullWidth
+              orientation={orientation}
+              className={orientation === 'horizontal' ? '@max-xl:hidden!' : '@xl:hidden!'}
+              data={CLIENTS}
+              value={client}
+              onChange={(value) => setClient(value as Client)}
+            />
+          ))}
+        </div>
         <Text size='sm'>
           {t(`setup.${client}`, {})} {t('setup.replace', {})}
         </Text>
