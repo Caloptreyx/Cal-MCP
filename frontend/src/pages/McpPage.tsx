@@ -13,13 +13,13 @@ export default function McpPage() {
 
   return (
     <AccountContentContainer title={t('title', {})}>
-      <div className='grid grid-cols-1 xl:grid-cols-2 gap-4'>
+      <Alert mb='md' icon={<FontAwesomeIcon icon={faShieldHalved} />} title={t('safety.title', {})}>
+        {t('safety.description', {})}
+      </Alert>
+      <div className='grid grid-cols-1 xl:grid-cols-2 items-start gap-4'>
         <EndpointCard url={url} />
         <ClientSetupCard url={url} />
       </div>
-      <Alert mt='md' icon={<FontAwesomeIcon icon={faShieldHalved} />} title={t('safety.title', {})}>
-        {t('safety.description', {})}
-      </Alert>
     </AccountContentContainer>
   );
 }
