@@ -54,7 +54,7 @@ The four API tools cover every client and admin endpoint, including those added 
 
 ## Support
 
-Join the [Discord](https://discord.gg/wRrNKhxZvy).
+Need help or want to request a feature? Join the [Caloptreyx Discord](https://discord.gg/4qjMWU7S8x).
 
 ## License
 
