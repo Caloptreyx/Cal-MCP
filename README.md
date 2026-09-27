@@ -1,4 +1,4 @@
-# Cal MCP
+# Cal MCP [![M8ven Score](https://m8ven.ai/badge/mcp/caloptreyx/cal-mcp)](https://m8ven.ai/mcp/caloptreyx/cal-mcp)
 
 MCP server for [Calagopus Panel](https://calagopus.com). It lets AI assistants such as Claude, Cursor and VS Code manage your panel through its API, limited to the permissions of the API key they connect with.
 
