@@ -3,14 +3,21 @@ use super::{
     lifecycle,
     protocol::{Era, Prepared},
 };
-use crate::tools::{self, Ctx};
+use crate::{
+    settings::ExtensionSettingsData,
+    tools::{self, Ctx},
+};
 use axum::http::StatusCode;
 use serde_json::{Value, json};
 
-pub async fn dispatch(ctx: &Ctx, prepared: &Prepared) -> Result<Value, Box<Rejection>> {
+pub async fn dispatch(
+    ctx: &Ctx,
+    prepared: &Prepared,
+    settings: &ExtensionSettingsData,
+) -> Result<Value, Box<Rejection>> {
     match prepared.method.as_str() {
-        "initialize" => Ok(lifecycle::initialize(&prepared.params)),
-        "server/discover" => Ok(lifecycle::discover()),
+        "initialize" => Ok(lifecycle::initialize(&prepared.params, settings)),
+        "server/discover" => Ok(lifecycle::discover(settings)),
         "ping" => Ok(json!({})),
         "tools/list" => Ok(json!({ "tools": tools::definitions() })),
         "tools/call" => tools::call(ctx, &prepared.params).await.map_err(|message| {
