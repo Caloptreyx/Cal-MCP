@@ -29,7 +29,7 @@ mod get_settings {
     pub async fn route(state: GetState, permissions: GetPermissionManager) -> ApiResponseResult {
         permissions.has_admin_permission("extensions.manage")?;
 
-        ApiResponse::new_serialized(crate::settings::load(&state).await).ok()
+        ApiResponse::new_serialized(crate::settings::load_result(&state).await?).ok()
     }
 }
 
@@ -41,19 +41,49 @@ mod put_settings {
 
     #[derive(ToSchema, Validate, Deserialize)]
     pub struct Payload {
-        #[garde(
-            length(chars, min = 1, max = 64),
-            pattern("^[A-Za-z0-9][A-Za-z0-9._-]*$")
-        )]
+        #[garde(custom(validate_integration_name))]
         integration_name: CompactString,
-        #[garde(length(chars, min = 1, max = 96))]
+        #[garde(custom(validate_display_title))]
         display_title: CompactString,
-        #[garde(length(chars, min = 1, max = 64))]
+        #[garde(custom(validate_panel_name))]
         panel_name: CompactString,
     }
 
     #[derive(ToSchema, Serialize)]
     struct Response {}
+
+    fn validate_integration_name(value: &CompactString, _context: &()) -> Result<(), garde::Error> {
+        if crate::settings::normalize_integration_name(value).is_some() {
+            return Ok(());
+        }
+
+        Err(garde::Error::new(
+            "must start with a letter or number and only contain letters, numbers, dots, dashes and underscores (max 64 characters)",
+        ))
+    }
+
+    fn validate_display_title(value: &CompactString, _context: &()) -> Result<(), garde::Error> {
+        if crate::settings::normalize_display_text(value, crate::settings::MAX_DISPLAY_TITLE)
+            .is_some()
+        {
+            return Ok(());
+        }
+
+        Err(garde::Error::new(
+            "must be 1-96 characters and must not contain control characters",
+        ))
+    }
+
+    fn validate_panel_name(value: &CompactString, _context: &()) -> Result<(), garde::Error> {
+        if crate::settings::normalize_display_text(value, crate::settings::MAX_PANEL_NAME).is_some()
+        {
+            return Ok(());
+        }
+
+        Err(garde::Error::new(
+            "must be 1-64 characters and must not contain control characters",
+        ))
+    }
 
     #[utoipa::path(put, path = "/settings", responses(
         (status = OK, body = inline(Response)),
@@ -77,31 +107,61 @@ mod put_settings {
         let display_title = data.display_title.trim();
         let panel_name = data.panel_name.trim();
 
-        if display_title.is_empty() || panel_name.is_empty() {
-            return ApiResponse::error("display title and panel name must not be blank").ok();
-        }
-
         {
             let mut settings = state.settings.get_mut().await?;
             let extension_settings: &mut ExtensionSettingsData =
-                settings.find_mut_extension_settings()?;
+                settings.get_mut_extension_settings(crate::PACKAGE)?;
+            let previous = extension_settings.clone();
 
             extension_settings.integration_name = integration_name.into();
             extension_settings.display_title = display_title.into();
             extension_settings.panel_name = panel_name.into();
 
-            settings.save().await?;
-        }
+            let changed_fields: Vec<&str> = [
+                (
+                    "integration_name",
+                    previous.integration_name != extension_settings.integration_name,
+                ),
+                (
+                    "display_title",
+                    previous.display_title != extension_settings.display_title,
+                ),
+                (
+                    "panel_name",
+                    previous.panel_name != extension_settings.panel_name,
+                ),
+            ]
+            .into_iter()
+            .filter_map(|(name, changed)| changed.then_some(name))
+            .collect();
 
-        activity_logger
-            .log(
-                "settings:extensions:update",
-                serde_json::json!({
-                    "extension": crate::PACKAGE,
-                    "changed_fields": ["integration_name", "display_title", "panel_name"],
-                }),
-            )
-            .await;
+            let old_values = serde_json::json!({
+                "integration_name": previous.integration_name.clone(),
+                "display_title": previous.display_title.clone(),
+                "panel_name": previous.panel_name.clone(),
+            });
+            let new_values = serde_json::json!({
+                "integration_name": extension_settings.integration_name.clone(),
+                "display_title": extension_settings.display_title.clone(),
+                "panel_name": extension_settings.panel_name.clone(),
+            });
+
+            settings.save().await?;
+
+            if !changed_fields.is_empty() {
+                activity_logger
+                    .log(
+                        "settings:extensions:update",
+                        serde_json::json!({
+                            "extension": crate::PACKAGE,
+                            "changed_fields": changed_fields,
+                            "old": old_values,
+                            "new": new_values,
+                        }),
+                    )
+                    .await;
+            }
+        }
 
         ApiResponse::new_serialized(Response {}).ok()
     }

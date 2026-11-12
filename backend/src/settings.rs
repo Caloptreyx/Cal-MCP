@@ -13,6 +13,10 @@ pub const DEFAULT_INTEGRATION_NAME: &str = "calagopus";
 pub const DEFAULT_DISPLAY_TITLE: &str = "Cal MCP";
 pub const DEFAULT_PANEL_NAME: &str = "Calagopus";
 
+pub const MAX_INTEGRATION_NAME: usize = 64;
+pub const MAX_DISPLAY_TITLE: usize = 96;
+pub const MAX_PANEL_NAME: usize = 64;
+
 #[derive(Clone, Debug, ToSchema, Serialize, Deserialize)]
 pub struct ExtensionSettingsData {
     /// The name clients use to register the MCP server, for example in a
@@ -32,6 +36,41 @@ impl Default for ExtensionSettingsData {
             panel_name: DEFAULT_PANEL_NAME.into(),
         }
     }
+}
+
+/// Trims and validates a client-facing integration name. Names have to be safe
+/// to place in a shell command and as an object key in client configs.
+pub fn normalize_integration_name(value: &str) -> Option<CompactString> {
+    let value = value.trim();
+
+    if value.is_empty() || value.chars().count() > MAX_INTEGRATION_NAME {
+        return None;
+    }
+
+    let mut chars = value.chars();
+    let first = chars.next()?;
+
+    if !first.is_ascii_alphanumeric() {
+        return None;
+    }
+
+    if !chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')) {
+        return None;
+    }
+
+    Some(value.into())
+}
+
+/// Trims and validates free-form branding text. Control characters are rejected
+/// because these values are interpolated into MCP instructions.
+pub fn normalize_display_text(value: &str, max: usize) -> Option<CompactString> {
+    let value = value.trim();
+
+    if value.is_empty() || value.chars().count() > max || value.chars().any(char::is_control) {
+        return None;
+    }
+
+    Some(value.into())
 }
 
 #[async_trait::async_trait]
@@ -58,37 +97,40 @@ impl SettingsDeserializeExt for ExtensionSettingsDataDeserializer {
         let default = ExtensionSettingsData::default();
 
         Ok(Box::new(ExtensionSettingsData {
-            integration_name: non_empty(
-                deserializer.take_raw_setting("integration_name"),
-                default.integration_name,
-            ),
-            display_title: non_empty(
-                deserializer.take_raw_setting("display_title"),
-                default.display_title,
-            ),
-            panel_name: non_empty(
-                deserializer.take_raw_setting("panel_name"),
-                default.panel_name,
-            ),
+            integration_name: deserializer
+                .take_raw_setting("integration_name")
+                .and_then(|value| normalize_integration_name(&value))
+                .unwrap_or(default.integration_name),
+            display_title: deserializer
+                .take_raw_setting("display_title")
+                .and_then(|value| normalize_display_text(&value, MAX_DISPLAY_TITLE))
+                .unwrap_or(default.display_title),
+            panel_name: deserializer
+                .take_raw_setting("panel_name")
+                .and_then(|value| normalize_display_text(&value, MAX_PANEL_NAME))
+                .unwrap_or(default.panel_name),
         }))
     }
 }
 
-fn non_empty(value: Option<CompactString>, fallback: CompactString) -> CompactString {
-    match value {
-        Some(value) if !value.trim().is_empty() => value,
-        _ => fallback,
-    }
+/// Reads the settings and returns an error when they cannot be loaded. Routes
+/// that are allowed to fall back to defaults should use [`load`].
+pub async fn load_result(state: &State) -> Result<ExtensionSettingsData, anyhow::Error> {
+    let settings = state.settings.get().await?;
+
+    settings
+        .get_extension_settings::<ExtensionSettingsData>(crate::PACKAGE)
+        .map(Clone::clone)
 }
 
 /// Reads the current branding settings, falling back to the defaults when the
 /// settings store cannot be read or does not contain this extension yet.
 pub async fn load(state: &State) -> ExtensionSettingsData {
-    match state.settings.get().await {
-        Ok(settings) => settings
-            .find_extension_settings::<ExtensionSettingsData>()
-            .map(Clone::clone)
-            .unwrap_or_default(),
-        Err(_) => ExtensionSettingsData::default(),
+    match load_result(state).await {
+        Ok(settings) => settings,
+        Err(err) => {
+            tracing::warn!("failed to load Cal MCP settings, using defaults: {err:#}");
+            ExtensionSettingsData::default()
+        }
     }
 }
