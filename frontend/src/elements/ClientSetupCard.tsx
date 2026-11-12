@@ -6,14 +6,14 @@ import SegmentedControl from '@/elements/SegmentedControl.tsx';
 import Stack from '@/elements/Stack.tsx';
 import Text from '@/elements/Text.tsx';
 import TitleCard from '@/elements/TitleCard.tsx';
-import { CLIENTS, type Client, snippet } from '../lib/clients.ts';
+import { type Branding, CLIENTS, type Client, snippet } from '../lib/clients.ts';
 import { useExtTranslations } from '../translations.ts';
 import CopyAction from './CopyAction.tsx';
 
-export default function ClientSetupCard({ url }: { url: string }) {
+export default function ClientSetupCard({ url, branding }: { url: string; branding: Branding }) {
   const { t } = useExtTranslations();
   const [client, setClient] = useState<Client>('agent');
-  const text = snippet(client, url);
+  const text = snippet(client, url, branding);
 
   return (
     <TitleCard

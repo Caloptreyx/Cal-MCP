@@ -74,12 +74,13 @@ async fn handle(
             .filter_map(|name| headers.get(name).map(|value| (name.clone(), value.clone())))
             .collect(),
     };
+    let extension_settings = crate::settings::load(&state).await;
 
-    match dispatch::dispatch(&ctx, &prepared).await {
+    match dispatch::dispatch(&ctx, &prepared, &extension_settings).await {
         Ok(result) => Json(json!({
             "jsonrpc": "2.0",
             "id": id,
-            "result": lifecycle::finish(&prepared.era, result),
+            "result": lifecycle::finish(&prepared.era, result, &extension_settings),
         }))
         .into_response(),
         Err(rejection) => rejection.into_response(),
