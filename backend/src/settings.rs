@@ -120,7 +120,7 @@ pub async fn load_result(state: &State) -> Result<ExtensionSettingsData, anyhow:
 
     settings
         .get_extension_settings::<ExtensionSettingsData>(crate::PACKAGE)
-        .map(Clone::clone)
+        .cloned()
 }
 
 /// Reads the current branding settings, falling back to the defaults when the

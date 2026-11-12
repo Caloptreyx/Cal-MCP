@@ -14,15 +14,17 @@ const READ: Hints = Hints {
     destructive: false,
     idempotent: true,
 };
-const CHANGE: Hints = Hints {
-    read_only: false,
-    destructive: false,
-    idempotent: false,
-};
 const DANGER: Hints = Hints {
     read_only: false,
     destructive: true,
     idempotent: false,
+};
+// Overwrites the whole file, so the old contents are lost, but writing the same
+// contents twice leaves the same result.
+const OVERWRITE: Hints = Hints {
+    read_only: false,
+    destructive: true,
+    idempotent: true,
 };
 
 fn tool(
@@ -217,7 +219,7 @@ fn file_tools() -> Vec<Value> {
                 "content": { "type": "string", "description": "The complete new contents of the file" },
             }),
             &["server", "file", "content"],
-            CHANGE,
+            OVERWRITE,
         ),
     ]
 }
@@ -232,4 +234,121 @@ static DEFINITIONS: LazyLock<Vec<Value>> = LazyLock::new(|| {
 
 pub fn definitions() -> &'static [Value] {
     &DEFINITIONS
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // name, readOnlyHint, destructiveHint, idempotentHint
+    const EXPECTED: [(&str, bool, bool, bool); 12] = [
+        ("search_api", true, false, true),
+        ("describe_api", true, false, true),
+        ("read_api", true, false, true),
+        ("write_api", false, true, false),
+        ("list_servers", true, false, true),
+        ("get_server", true, false, true),
+        ("power_server", false, true, false),
+        ("send_command", false, true, false),
+        ("read_console", true, false, true),
+        ("list_files", true, false, true),
+        ("read_file", true, false, true),
+        ("write_file", false, true, true),
+    ];
+
+    fn named(name: &str) -> &'static Value {
+        definitions()
+            .iter()
+            .find(|tool| tool["name"].as_str() == Some(name))
+            .unwrap_or_else(|| panic!("tool {name} is not declared"))
+    }
+
+    #[test]
+    fn declares_every_tool_once() {
+        assert_eq!(definitions().len(), EXPECTED.len());
+        for (name, ..) in EXPECTED {
+            named(name);
+        }
+    }
+
+    #[test]
+    fn every_tool_declares_all_four_boolean_hints() {
+        for tool in definitions() {
+            let name = tool["name"].as_str().unwrap_or_default();
+            let annotations = tool["annotations"]
+                .as_object()
+                .unwrap_or_else(|| panic!("{name} has no annotations"));
+            for hint in [
+                "readOnlyHint",
+                "destructiveHint",
+                "idempotentHint",
+                "openWorldHint",
+            ] {
+                assert!(
+                    annotations.get(hint).and_then(Value::as_bool).is_some(),
+                    "{name} is missing a boolean {hint}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn hints_match_handler_behaviour() {
+        for (name, read_only, destructive, idempotent) in EXPECTED {
+            let annotations = &named(name)["annotations"];
+            assert_eq!(
+                annotations["readOnlyHint"],
+                json!(read_only),
+                "{name} readOnlyHint"
+            );
+            assert_eq!(
+                annotations["destructiveHint"],
+                json!(destructive),
+                "{name} destructiveHint"
+            );
+            assert_eq!(
+                annotations["idempotentHint"],
+                json!(idempotent),
+                "{name} idempotentHint"
+            );
+            assert_eq!(
+                annotations["openWorldHint"],
+                json!(false),
+                "{name} openWorldHint"
+            );
+        }
+    }
+
+    #[test]
+    fn schemas_are_well_formed() {
+        for tool in definitions() {
+            let name = tool["name"].as_str().unwrap_or_default();
+            assert!(!name.is_empty(), "a tool has no name");
+            assert!(
+                tool["description"]
+                    .as_str()
+                    .is_some_and(|text| !text.is_empty()),
+                "{name} has no description"
+            );
+
+            let schema = tool["inputSchema"]
+                .as_object()
+                .unwrap_or_else(|| panic!("{name} has no inputSchema"));
+            assert_eq!(schema["type"], json!("object"), "{name} inputSchema type");
+            assert_eq!(
+                schema["additionalProperties"],
+                json!(false),
+                "{name} inputSchema additionalProperties"
+            );
+
+            let properties = schema["properties"].as_object().unwrap();
+            for required in schema["required"].as_array().unwrap() {
+                let required = required.as_str().unwrap();
+                assert!(
+                    properties.contains_key(required),
+                    "{name} requires undeclared property {required}"
+                );
+            }
+        }
+    }
 }
