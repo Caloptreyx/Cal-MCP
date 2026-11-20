@@ -6,17 +6,30 @@ pub const MAX_REDIRECT_URI_LEN: usize = 2048;
 pub const MAX_CLIENT_NAME: usize = 100;
 pub const MAX_STATE_LEN: usize = 2048;
 
-/// Schemes that must never be redirected to, whatever the client registered.
-const FORBIDDEN_SCHEMES: [&str; 6] = ["javascript", "data", "file", "vbscript", "blob", "about"];
+/// Schemes that must never be redirected to, whatever the client registered: script and
+/// document schemes, local files, and network schemes other than https and loopback http.
+const FORBIDDEN_SCHEMES: [&str; 12] = [
+    "javascript",
+    "data",
+    "file",
+    "vbscript",
+    "blob",
+    "about",
+    "filesystem",
+    "view-source",
+    "ftp",
+    "ws",
+    "wss",
+    "mailto",
+];
 
 pub fn is_loopback_host(host: &str) -> bool {
     matches!(host, "localhost" | "127.0.0.1" | "[::1]" | "::1")
 }
 
 /// Checks a redirect URI at registration. Allowed: `https`, `http` on a loopback host, and
-/// private-use schemes in reverse domain form such as `cursor://...` (RFC 8252 section 7.1),
-/// which native clients like Cursor and VS Code need. Fragments are not allowed (RFC 6749
-/// section 3.1.2).
+/// private-use app schemes such as `cursor://` or `vscode://` (RFC 8252 section 7.1), which
+/// native clients need. Fragments are not allowed (RFC 6749 section 3.1.2).
 pub fn redirect_uri(value: &str) -> Result<(), String> {
     if value.len() > MAX_REDIRECT_URI_LEN {
         return Err(format!(
@@ -54,10 +67,7 @@ pub fn redirect_uri(value: &str) -> Result<(), String> {
         scheme if FORBIDDEN_SCHEMES.contains(&scheme) => {
             Err(format!("the {scheme}: scheme is not allowed"))
         }
-        scheme if scheme.contains('.') => Ok(()),
-        scheme => Err(format!(
-            "{value} uses the {scheme}: scheme; private-use schemes must be in reverse domain form, like com.example.app:"
-        )),
+        _ => Ok(()),
     }
 }
 

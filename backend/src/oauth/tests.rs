@@ -22,7 +22,7 @@ use uuid::Uuid;
 
 // RFC 7636 appendix B.
 const VERIFIER: &str = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
-const CHALLENGE: &str = "E9Melhoa2OwvFrEMTJguCgVv8sXN9e_n0y2tXlzwP2M";
+const CHALLENGE: &str = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
 const REDIRECT: &str = "https://claude.ai/api/mcp/auth_callback";
 
 struct StoredToken {
@@ -913,7 +913,8 @@ async fn registration_rejects_unsafe_metadata() {
         "http://claude.ai/callback",
         "javascript:alert(1)",
         "data:text/html,hi",
-        "myapp:/callback",
+        "ftp://claude.ai/callback",
+        "wss://claude.ai/callback",
         "https://claude.ai/callback#frag",
         "https://user:pass@claude.ai/callback",
         "/relative/callback",
@@ -929,6 +930,7 @@ async fn registration_rejects_unsafe_metadata() {
         "http://127.0.0.1:33418/callback",
         "http://[::1]:8080/cb",
         "cursor://anysphere.cursor-retrieval/oauth/callback",
+        "vscode://vscode.github-authentication/did-authenticate",
         "com.example.app:/oauth",
         "https://chatgpt.com/connector_platform_oauth_redirect",
     ] {
