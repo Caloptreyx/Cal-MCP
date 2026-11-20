@@ -1,6 +1,6 @@
 # Cal MCP [![M8ven Score](https://m8ven.ai/badge/mcp/caloptreyx/cal-mcp)](https://m8ven.ai/mcp/caloptreyx/cal-mcp)
 
-MCP server for [Calagopus Panel](https://calagopus.com). It lets AI assistants such as Claude, Cursor and VS Code manage your panel through its API, limited to the permissions of the API key they connect with.
+MCP server for [Calagopus Panel](https://calagopus.com). It lets AI assistants such as Claude, ChatGPT, Cursor and VS Code manage your panel through its API, limited to the permissions of the API key or OAuth connection they use.
 
 ## Requirements
 
@@ -13,16 +13,33 @@ Calagopus Panel 1.2.0 or newer.
 
 ## Connect
 
-1. Create an API key under **Account → API Keys**. Give it only the permissions the assistant needs.
-2. Open **Account → MCP**. It shows the endpoint and ready-made setup for Claude Code, Cursor, VS Code and Claude Desktop, plus a prompt your AI agent can use to set itself up.
-
 Endpoint:
 
 ```
 https://your-panel.com/api/client/extensions/dev.caloptreyx.calmcp/mcp
 ```
 
-Send the key as `Authorization: Bearer <api key>`. For example, in Claude Code:
+**Account → MCP** shows the endpoint and ready-made setup for each client, plus a prompt your AI agent can use to set itself up.
+
+### Web connectors (Claude.ai, ChatGPT): OAuth
+
+1. Add the endpoint as a custom connector (Claude: **Settings → Connectors**; ChatGPT: **Settings → Connectors**).
+2. The client opens the panel. Sign in if asked, pick the access and approve.
+
+| Access | Allows |
+| --- | --- |
+| Read only | GET requests and the read tools in the client area; no `/api/admin` |
+| Your servers | Everything in the client area; no `/api/admin` |
+| Full access | Everything your account can do, admin area included (offered to admins only) |
+
+Approved clients are listed under **Account → MCP → Connected clients**, where you can disconnect them. On panels older than 1.2.10 the panel does not return to the approval page after signing in, so sign in first and then connect.
+
+Any MCP client that supports OAuth works the same way. The server follows the [MCP authorization spec](https://modelcontextprotocol.io/specification/latest/basic/authorization): protected resource metadata (RFC 9728) announced by `WWW-Authenticate` on 401, authorization server metadata (RFC 8414) at `/.well-known/oauth-authorization-server/api/auth/extensions/dev.caloptreyx.calmcp/oauth`, dynamic client registration (RFC 7591), the authorization code flow with PKCE S256 only, refresh tokens and token revocation (RFC 7009). The scopes are `read`, `client` and `full`.
+
+### Other clients: API key
+
+1. Create an API key under **Account → API Keys**. Give it only the permissions the assistant needs.
+2. Send it as `Authorization: Bearer <api key>`. For example, in Claude Code:
 
 ```
 claude mcp add --transport http calagopus https://your-panel.com/api/client/extensions/dev.caloptreyx.calmcp/mcp --header "Authorization: Bearer <api key>"
@@ -98,8 +115,10 @@ Two limits keep an assistant from doing more than you want:
 
 ## Security
 
-- Every call runs as the API key, so the panel's own permission checks, rate limits and activity log apply.
-- Only API keys are accepted. Browser sessions are refused.
+- Every call runs as a panel API key, so the panel's own permission checks, rate limits and activity log apply. Browser sessions are refused.
+- An approved OAuth connection is backed by an API key the extension creates for you, named `MCP <client> <id>`, with your permissions narrowed to the chosen access. Its secret is never stored or shown. Deleting that key under **Account → API Keys** disconnects the client too.
+- OAuth tokens, codes and client secrets are stored as SHA-256 digests. Access tokens last an hour and refresh tokens 30 days. Each refresh replaces the refresh token, and a reused refresh token or authorization code disconnects the client. Authorization codes live two minutes and work once.
+- Redirect URIs must match a registered one exactly and use https, http on localhost, or an app scheme such as `cursor://`. Approving a client needs a signed-in browser session; API keys, OAuth tokens and impersonating admins cannot approve or manage connections. Each user can connect up to 25 clients.
 
 ## Support
 

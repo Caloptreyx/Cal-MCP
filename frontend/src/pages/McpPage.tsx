@@ -6,8 +6,10 @@ import AccountContentContainer from '@/elements/containers/AccountContentContain
 import Alert from '@/elements/feedback/Alert.tsx';
 import ErrorState from '@/elements/feedback/ErrorState.tsx';
 import Spinner from '@/elements/feedback/Spinner.tsx';
+import Stack from '@/elements/Stack.tsx';
 import getBranding from '../api/getBranding.ts';
 import ClientSetupCard from '../elements/ClientSetupCard.tsx';
+import ConnectedClientsCard from '../elements/ConnectedClientsCard.tsx';
 import EndpointCard from '../elements/EndpointCard.tsx';
 import KeyAccessCard from '../elements/KeyAccessCard.tsx';
 import { type Branding, endpointUrl } from '../lib/clients.ts';
@@ -45,9 +47,14 @@ export default function McpPage() {
         <ErrorState error={loadError ?? 'Could not load branding.'} onRetry={loadBranding} />
       ) : (
         <div className='grid grid-cols-1 xl:grid-cols-2 items-start gap-4'>
-          <EndpointCard url={url} />
-          <ClientSetupCard url={url} branding={branding} />
-          <KeyAccessCard />
+          <Stack>
+            <EndpointCard url={url} />
+            <ConnectedClientsCard />
+          </Stack>
+          <Stack>
+            <ClientSetupCard url={url} branding={branding} />
+            <KeyAccessCard />
+          </Stack>
         </div>
       )}
     </AccountContentContainer>

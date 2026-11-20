@@ -3,9 +3,9 @@ mod error;
 mod lifecycle;
 mod protocol;
 
-use crate::{tools::Ctx, upstream::LiveUpstream};
+use crate::{oauth::OAuthGrant, tools::Ctx, upstream::LiveUpstream};
 use axum::{
-    Json,
+    Extension, Json,
     body::Bytes,
     extract::ConnectInfo,
     http::{HeaderMap, HeaderName, StatusCode, header},
@@ -27,9 +27,11 @@ const FORWARDED_HEADERS: [HeaderName; 3] = [
     header::USER_AGENT,
 ];
 
+/// Mounted on the client API, behind the panel's auth middleware. Clients connect to
+/// [`crate::oauth::MCP_PATH`], which forwards here.
 pub fn router(state: &State) -> OpenApiRouter<State> {
     OpenApiRouter::new()
-        .route("/mcp", post(handle))
+        .route("/mcp/inner", post(handle))
         .with_state(state.clone())
 }
 
@@ -38,6 +40,7 @@ async fn handle(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     user: GetUser,
     auth: GetAuthMethod,
+    oauth: Option<Extension<OAuthGrant>>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
@@ -50,7 +53,7 @@ async fn handle(
             StatusCode::FORBIDDEN,
             None,
             INVALID_REQUEST,
-            "Connect with a panel API key sent as \"Authorization: Bearer <key>\"",
+            "Connect with OAuth or with a panel API key sent as \"Authorization: Bearer <key>\"",
         )
         .into_response();
     }
@@ -85,8 +88,14 @@ async fn handle(
         AuthMethod::ApiKey(key) => Some(key.uuid),
         _ => None,
     };
+    // An OAuth grant runs as its backing API key, so the key's restrictions apply as well as
+    // the scope the user approved.
+    let mut access = extension_settings.access_for(api_key);
+    if let Some(Extension(grant)) = oauth {
+        access = access.union(grant.scope.access());
+    }
     let ctx = Ctx {
-        access: extension_settings.access_for(api_key),
+        access,
         upstream: Arc::new(LiveUpstream {
             state: state.0.clone(),
             user: user.0,

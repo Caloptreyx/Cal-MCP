@@ -5,17 +5,18 @@ const translations = defineTranslations({
   translations: {
     title: 'MCP',
     description:
-      'Connect AI assistants such as Claude, Cursor or VS Code to this panel. They can use everything the panel API offers, limited to the permissions of the API key you connect with.',
+      'Connect AI assistants such as Claude, ChatGPT, Cursor or VS Code to this panel. They can use everything the panel API offers, limited to the permissions of the API key or connection you approve.',
     copy: 'Copy',
     copied: 'Copied',
     endpoint: {
       title: 'Endpoint',
-      hint: 'Send an API key as a Bearer token in the Authorization header.',
+      hint: 'Claude.ai and ChatGPT sign in with OAuth. Other clients send an API key as a Bearer token in the Authorization header.',
       apiKeys: 'Create an API key',
     },
     setup: {
       title: 'Set up your client',
       agent: 'Paste this into your AI agent, such as Claude Code, Cursor or Codex, and it adds the server itself.',
+      web: 'Add this URL as a custom connector (Claude: Settings > Connectors; ChatGPT: Settings > Connectors). You approve it in the panel, no API key needed.',
       claudeCode: 'Run this in a terminal.',
       cursor: 'Add this to ~/.cursor/mcp.json.',
       vscode: 'Add this to .vscode/mcp.json in your project.',
@@ -36,6 +37,47 @@ const translations = defineTranslations({
       title: 'Keep the key scoped',
       description:
         'Give the key only the permissions the assistant needs. Everything it does is recorded under that key in your activity.',
+    },
+    scopes: {
+      read: {
+        label: 'Read only',
+        description: 'View servers, files and console output. Nothing can be changed and the admin area is off limits.',
+      },
+      client: {
+        label: 'Your servers',
+        description: 'Everything you can do with your servers, but not the admin area.',
+      },
+      full: {
+        label: 'Full access',
+        description: 'Everything your account can do, including the admin area.',
+      },
+    },
+    consent: {
+      title: 'Connect an MCP client',
+      heading: 'Connect {client}',
+      description:
+        '{client} wants to use this panel through MCP with your account. It can only do what your account is allowed to do, limited further by the access you pick here.',
+      redirect: 'After you decide, your browser goes back to {host}:',
+      loopback:
+        'This client runs on your own computer (localhost). Only approve it if you started the connection yourself just now.',
+      scope: 'Access',
+      apiKey:
+        'This adds an API key starting with "MCP" to your account. Disconnect the client at any time under Account > MCP.',
+      approve: 'Approve',
+      deny: 'Deny',
+      error: 'This request cannot be completed',
+    },
+    connected: {
+      title: 'Connected clients',
+      description: 'Clients you approved through OAuth, such as Claude.ai or ChatGPT.',
+      empty: 'No clients are connected.',
+      connected: 'Connected',
+      lastUsed: 'last used',
+      never: 'never',
+      revoke: 'Disconnect',
+      confirmTitle: 'Disconnect client',
+      confirm: '{client} loses access right away. Connecting it again needs a new approval.',
+      revoked: '{client} was disconnected.',
     },
   },
 });

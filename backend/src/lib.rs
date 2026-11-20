@@ -1,12 +1,16 @@
 use shared::{
     State,
-    extensions::{Extension, ExtensionRouteBuilder, ExtensionUpdateInfo},
+    extensions::{
+        Extension, ExtensionRouteBuilder, ExtensionUpdateInfo,
+        background_tasks::BackgroundTaskBuilder,
+    },
 };
 
 mod access;
 mod api;
 mod completion;
 mod mcp;
+mod oauth;
 mod openapi;
 mod panel;
 mod prompts;
@@ -90,6 +94,8 @@ impl Extension for ExtensionStruct {
         builder: ExtensionRouteBuilder,
     ) -> ExtensionRouteBuilder {
         builder
+            .add_global_router(|routes| routes.merge(oauth::global_router(&state)))
+            .add_auth_api_router(|routes| routes.merge(oauth::auth_router(&state)))
             .add_client_api_router(|routes| {
                 routes
                     .nest(&format!("/extensions/{PACKAGE}"), mcp::router(&state))
@@ -97,9 +103,23 @@ impl Extension for ExtensionStruct {
                         &format!("/extensions/{PACKAGE}"),
                         api::client_router(&state),
                     )
+                    .merge(oauth::client_router(&state))
             })
             .add_admin_api_router(|routes| {
                 routes.nest(&format!("/extensions/{PACKAGE}"), api::admin_router(&state))
             })
+    }
+
+    async fn initialize_background_tasks(
+        &mut self,
+        _state: State,
+        builder: BackgroundTaskBuilder,
+    ) -> BackgroundTaskBuilder {
+        builder
+            .add_task("calmcp-oauth-prune", |state| async move {
+                oauth::prune(&state).await
+            })
+            .await;
+        builder
     }
 }

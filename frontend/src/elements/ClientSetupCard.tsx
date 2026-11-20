@@ -36,7 +36,7 @@ export default function ClientSetupCard({ url, branding }: { url: string; brandi
           ))}
         </div>
         <Text size='sm'>
-          {t(`setup.${client}`, {})} {t('setup.replace', {})}
+          {t(`setup.${client}`, {})} {client !== 'web' && t('setup.replace', {})}
         </Text>
         <Code block className='whitespace-pre-wrap [overflow-wrap:anywhere]'>
           {text}

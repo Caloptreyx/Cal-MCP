@@ -1,6 +1,6 @@
 export const PACKAGE = 'dev.caloptreyx.calmcp';
 
-export type Client = 'agent' | 'claudeCode' | 'cursor' | 'vscode' | 'claudeDesktop';
+export type Client = 'agent' | 'web' | 'claudeCode' | 'cursor' | 'vscode' | 'claudeDesktop';
 
 export interface Branding {
   integrationName: string;
@@ -16,6 +16,7 @@ export const DEFAULT_BRANDING: Branding = {
 
 export const CLIENTS: { value: Client; label: string }[] = [
   { value: 'agent', label: 'AI agent' },
+  { value: 'web', label: 'Claude.ai / ChatGPT' },
   { value: 'claudeCode', label: 'Claude Code' },
   { value: 'cursor', label: 'Cursor' },
   { value: 'vscode', label: 'VS Code' },
@@ -48,6 +49,8 @@ export function snippet(client: Client, url: string, branding: Branding): string
   switch (client) {
     case 'agent':
       return agentPrompt(url, branding);
+    case 'web':
+      return url;
     case 'claudeCode':
       return `claude mcp add --transport http ${branding.integrationName} ${url} --header "Authorization: ${AUTHORIZATION}"`;
     case 'cursor':

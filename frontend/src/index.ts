@@ -3,6 +3,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { createElement } from 'react';
 import { Extension, type ExtensionContext } from 'shared';
 import ConfigurationPage from './pages/ConfigurationPage.tsx';
+import ConsentPage from './pages/ConsentPage.tsx';
 import McpPage from './pages/McpPage.tsx';
 import { getExtTranslations } from './translations.ts';
 
@@ -17,6 +18,12 @@ class DevCaloptreyxCalmcpExtension extends Extension {
       icon: faRobot,
       path: '/mcp',
       element: McpPage,
+    });
+    // The OAuth authorization endpoint; unnamed so it stays out of the sidebar.
+    ctx.extensionRegistry.routes.addAccountRoute({
+      name: undefined,
+      path: '/mcp/authorize',
+      element: ConsentPage,
     });
   }
 }
