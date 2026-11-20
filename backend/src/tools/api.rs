@@ -1,11 +1,11 @@
 use super::{
-    Ctx,
+    Ctx, Output,
     args::{integer, method, object, optional_text, text},
-    output::{request, truncate},
+    output::{MAX_TEXT, render, request, truncate},
 };
-use crate::openapi::Scope;
+use crate::{openapi::Scope, proxy};
 use axum::http::Method;
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 
 pub async fn search(ctx: &Ctx, args: &Map<String, Value>) -> Result<String, String> {
     let query = text(args, "query")?;
@@ -49,15 +49,35 @@ pub async fn describe(ctx: &Ctx, args: &Map<String, Value>) -> Result<String, St
         .map_err(|err| err.to_string())
 }
 
-pub async fn read(ctx: &Ctx, args: &Map<String, Value>) -> Result<String, String> {
-    request(
+pub async fn read(ctx: &Ctx, args: &Map<String, Value>) -> Result<Output, String> {
+    let reply = proxy::call(
         ctx,
         Method::GET,
         text(args, "path")?,
         object(args, "query")?,
         None,
     )
-    .await
+    .await?;
+    let text = render(&reply)?;
+
+    // Large bodies stay out of structuredContent: clients put it in front of
+    // the model as well, and the truncated text already says how to narrow it.
+    let truncated = reply.body.len() > MAX_TEXT;
+    let data = if truncated {
+        Value::Null
+    } else {
+        serde_json::from_slice(&reply.body).unwrap_or_else(|_| Value::String(text.clone()))
+    };
+
+    Ok(Output {
+        text,
+        note: None,
+        structured: Some(json!({
+            "status": reply.status,
+            "data": data,
+            "truncated": truncated,
+        })),
+    })
 }
 
 pub async fn write(ctx: &Ctx, args: &Map<String, Value>) -> Result<String, String> {

@@ -45,10 +45,20 @@ pub async fn dispatch(
         "tools/call" => tools::call(ctx, params).await.map_err(|message| {
             Rejection::new(StatusCode::OK, prepared.id.clone(), INVALID_PARAMS, message)
         }),
+        // The prompt list depends on the connection's access, so it is private.
         "prompts/list" => single_page(params)
-            .map(|()| cacheable(era, prompts::definitions(), LIST_TTL_MS, "public"))
+            .map(|()| {
+                cacheable(
+                    era,
+                    prompts::definitions(ctx.access),
+                    LIST_TTL_MS,
+                    "private",
+                )
+            })
             .map_err(reject),
-        "prompts/get" => prompts::get(ctx, params).await.map_err(reject),
+        "prompts/get" => prompts::get(ctx, params, ctx.access)
+            .await
+            .map_err(reject),
         "resources/list" => resources::list(ctx, params)
             .await
             .map(|result| cacheable(era, result, RESOURCE_LIST_TTL_MS, "private"))
@@ -175,21 +185,132 @@ mod tests {
 mod access_tests {
     use super::*;
     use crate::{access::Access, panel::mock::MockPanel};
+    use axum::http::Method;
 
-    fn request(method: &str) -> Prepared {
+    const READ_ONLY: Access = Access {
+        read_only: true,
+        client_only: false,
+    };
+
+    fn request(method: &str, params: Value) -> Prepared {
         Prepared {
             id: Some(json!(1)),
             method: method.into(),
-            params: Map::new(),
+            params: match params {
+                Value::Object(params) => params,
+                _ => Map::new(),
+            },
             era: Era::Legacy,
         }
     }
 
+    async fn send(
+        panel: MockPanel,
+        access: Access,
+        method: &str,
+        params: Value,
+    ) -> Result<Value, Box<Rejection>> {
+        let (ctx, _) = panel.ctx(access);
+        dispatch(
+            &ctx,
+            &request(method, params),
+            &ExtensionSettingsData::default(),
+        )
+        .await
+    }
+
     async fn run(access: Access, method: &str) -> Value {
-        let (ctx, _) = MockPanel::default().ctx(access);
-        dispatch(&ctx, &request(method), &ExtensionSettingsData::default())
+        send(MockPanel::default(), access, method, json!({}))
             .await
             .unwrap()
+    }
+
+    fn names(list: &Value, key: &str) -> Vec<String> {
+        list[key]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["name"].as_str().unwrap().to_string())
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn read_only_hides_and_refuses_prompts_that_change_things() {
+        let all = names(&run(Access::NONE, "prompts/list").await, "prompts");
+        let limited = names(&run(READ_ONLY, "prompts/list").await, "prompts");
+        assert!(all.contains(&"backup_before_update".to_string()));
+        assert!(!limited.contains(&"backup_before_update".to_string()));
+        assert!(!limited.contains(&"setup_minecraft_server".to_string()));
+        assert!(limited.contains(&"diagnose_crash".to_string()));
+
+        let refused = send(
+            MockPanel::default(),
+            READ_ONLY,
+            "prompts/get",
+            json!({ "name": "backup_before_update", "arguments": { "server": "0a1b2c3d" } }),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(refused.code, INVALID_PARAMS);
+        assert!(refused.message.contains("read-only"), "{}", refused.message);
+    }
+
+    #[tokio::test]
+    async fn resources_are_read_through_the_access_checked_proxy() {
+        let panel = MockPanel::default().reply(
+            "/api/client/servers/0a1b2c3d/logs?lines=2",
+            200,
+            "text/plain",
+            b"one\ntwo",
+        );
+        let (ctx, panel) = panel.ctx(Access {
+            read_only: true,
+            client_only: true,
+        });
+        let result = dispatch(
+            &ctx,
+            &request(
+                "resources/read",
+                json!({ "uri": "calagopus://servers/0a1b2c3d/console?lines=2" }),
+            ),
+            &ExtensionSettingsData::default(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result["contents"][0]["text"], json!("one\ntwo"));
+        // The read went through Upstream, behind the proxy's access check.
+        assert_eq!(panel.calls().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn json_tools_return_structured_content_next_to_the_text() {
+        let servers = json!({
+            "servers": { "total": 1, "page": 1, "per_page": 25, "data": [{ "name": "Survival" }] }
+        });
+        let panel = MockPanel::default().on_json(Method::GET, "/api/client/servers", servers.clone());
+        let result = send(
+            panel,
+            Access::NONE,
+            "tools/call",
+            json!({ "name": "list_servers", "arguments": {} }),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result["isError"], json!(false));
+        assert_eq!(result["structuredContent"], servers);
+        let text: Value =
+            serde_json::from_str(result["content"][0]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(text, servers);
+
+        let listed = run(Access::NONE, "tools/list").await;
+        let list_servers = listed["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tool| tool["name"] == json!("list_servers"))
+            .unwrap();
+        assert_eq!(list_servers["outputSchema"]["type"], json!("object"));
     }
 
     #[tokio::test]

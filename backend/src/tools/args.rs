@@ -19,6 +19,35 @@ pub fn optional_text<'a>(
     }
 }
 
+/// A required string that may be empty, such as new file contents.
+pub fn any_text<'a>(args: &'a Map<String, Value>, key: &str) -> Result<&'a str, String> {
+    match args.get(key) {
+        Some(Value::String(value)) => Ok(value),
+        _ => Err(format!("`{key}` is required and must be a string")),
+    }
+}
+
+pub fn optional_integer(
+    args: &Map<String, Value>,
+    key: &str,
+    min: i64,
+    max: i64,
+) -> Result<Option<i64>, String> {
+    match args.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(_) => integer(args, key, min, min, max).map(Some),
+    }
+}
+
+/// A UUID or short ID of something on a server, such as a backup or schedule.
+pub fn identifier<'a>(args: &'a Map<String, Value>, key: &str) -> Result<&'a str, String> {
+    let value = text(args, key)?;
+    if value.len() > 64 || !value.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        return Err(format!("`{key}` must be a UUID, got \"{value}\""));
+    }
+    Ok(value)
+}
+
 pub fn integer(
     args: &Map<String, Value>,
     key: &str,

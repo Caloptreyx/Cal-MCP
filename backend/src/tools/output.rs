@@ -2,27 +2,39 @@ use super::Ctx;
 use crate::proxy::{self, Reply};
 use axum::http::Method;
 use serde_json::{Map, Value};
+use sha2::{Digest, Sha256};
 
-const MAX_TEXT: usize = 100_000;
+/// The most text one tool result carries.
+pub const MAX_TEXT: usize = 100_000;
 const BINARY_TYPES: [&str; 12] = [
     "image/", "audio/", "video/", "font/", "zip", "gzip", "tar", "pdf", "wasm", "7z", "rar",
     "msgpack",
 ];
+
+/// Cuts `text` to at most `max` bytes without splitting a character.
+pub fn floor_boundary(text: &str, max: usize) -> usize {
+    let mut end = max.min(text.len());
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    end
+}
 
 pub fn truncate(text: String) -> String {
     if text.len() <= MAX_TEXT {
         return text;
     }
 
-    let mut end = MAX_TEXT;
-    while !text.is_char_boundary(end) {
-        end -= 1;
-    }
+    let end = floor_boundary(&text, MAX_TEXT);
     format!(
         "{}\n\n[Truncated: showing the first {end} of {} bytes. Narrow the request with query parameters or pagination.]",
         &text[..end],
         text.len()
     )
+}
+
+pub fn sha256_hex(data: &[u8]) -> String {
+    hex::encode(Sha256::digest(data).as_slice())
 }
 
 fn as_text<'a>(content_type: Option<&str>, body: &'a [u8]) -> Option<&'a str> {
@@ -101,14 +113,37 @@ pub async fn request(
     render(&proxy::call(ctx, method, path, query, body).await?)
 }
 
-pub async fn request_text(
+/// Like [`request`], and also returns the response parsed as JSON (whole,
+/// even when the text had to be truncated), or `None` when it is not JSON.
+pub async fn request_json(
     ctx: &Ctx,
+    method: Method,
     path: &str,
     query: Option<&Map<String, Value>>,
-) -> Result<String, String> {
-    let reply = proxy::call(ctx, Method::GET, path, query, None).await?;
-    if reply.status < 400 && reply.body.is_empty() {
-        return Ok(String::new());
+    body: Option<&Value>,
+) -> Result<(String, Option<Value>), String> {
+    let reply = proxy::call(ctx, method, path, query, body).await?;
+    let text = render(&reply)?;
+    Ok((text, serde_json::from_slice(&reply.body).ok()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn floor_boundary_never_splits_a_character() {
+        let text = "aé"; // é is two bytes
+        assert_eq!(floor_boundary(text, 2), 1);
+        assert_eq!(floor_boundary(text, 3), 3);
+        assert_eq!(floor_boundary(text, 10), 3);
     }
-    render(&reply)
+
+    #[test]
+    fn sha256_matches_a_known_digest() {
+        assert_eq!(
+            sha256_hex(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
 }

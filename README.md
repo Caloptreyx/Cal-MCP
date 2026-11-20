@@ -38,14 +38,29 @@ claude mcp add --transport http calagopus https://your-panel.com/api/client/exte
 | `write_api` | Sends a POST, PUT, PATCH or DELETE request to any `/api/client` or `/api/admin` endpoint |
 | `list_servers` | Lists the servers the account can access |
 | `get_server` | Shows a server's details and live resource usage |
-| `power_server` | Starts, stops, restarts or kills a server |
+| `power_server` | Starts, stops, restarts or kills a server; with `wait`, waits until it is running or offline and reports a crash during start-up |
 | `send_command` | Sends a console command |
+| `run_command` | Sends a console command and returns only the output it produced, waiting for a text or regular expression (`wait_for`) or until the console is quiet, for at most 60 seconds |
 | `read_console` | Reads recent console output |
 | `list_files` | Lists files in a server directory |
-| `read_file` | Reads a text file |
+| `read_file` | Reads a text file, whole or by line or byte range, and reports its size, line count and SHA-256 |
+| `edit_file` | Replaces exact text in a file, once or everywhere, without touching the rest |
 | `write_file` | Creates or replaces a text file |
+| `list_backups`, `create_backup`, `restore_backup`, `delete_backup` | Manage backups |
+| `list_schedules`, `create_schedule`, `run_schedule` | List schedules, create one with a cron time and steps, or run one now |
+| `list_startup_variables`, `update_startup_variables` | Read and change startup variables |
 
-The four API tools cover every client and admin endpoint, including those added by other extensions.
+The four API tools cover every client and admin endpoint, including those added by other extensions. Every tool declares whether it only reads, whether it can destroy data and whether repeating it is safe, so clients can ask before risky calls.
+
+`list_servers`, `get_server`, `list_files` and `read_api` also return their JSON as `structuredContent` with an `outputSchema`; the text stays for clients that do not read structured output.
+
+### Large files
+
+`read_file` returns at most 100 KB at a time and says when it showed only part of a file. `write_file` replaces the whole file, so a part passed back to it would cut the file short. To prevent that:
+
+- `edit_file` changes files of any size in place.
+- `write_file` refuses to replace an existing file over 100 KB unless it gets the file's `expected_sha256` from `read_file`.
+- `write_file` and `edit_file` refuse to write when `expected_sha256` is given and the file has changed since it was read.
 
 ## Prompts
 
@@ -74,7 +89,7 @@ Two limits keep an assistant from doing more than you want:
 
 | Limit | What it allows |
 | --- | --- |
-| Read-only | Only GET requests and read tools. Tools that change anything are hidden from the tool list and refused if called. |
+| Read-only | Only GET requests and read tools. Tools that change anything, and the `setup_minecraft_server` and `backup_before_update` prompts, are hidden from their lists and refused if called. |
 | Client API only | No requests to `/api/admin`, even when the key has admin permissions. |
 
 - Admins can turn either limit on for every connection under **Admin → Extensions → Cal MCP**.

@@ -8,7 +8,8 @@ pub const LEGACY: [&str; 4] = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-1
 fn instructions(settings: &ExtensionSettingsData, access: Access) -> String {
     let mut text = format!(
         "{} manages a {} game panel with the permissions of the API key it was connected with. \
-Use the server tools (list_servers, get_server, power_server, send_command, read_console, list_files, read_file, write_file) for everyday server work. \
+Use the dedicated tools for everyday server work: servers and power (list_servers, get_server, power_server), the console (run_command, send_command, read_console), files (list_files, read_file, edit_file, write_file), backups, schedules and startup variables. \
+Change existing files with edit_file; write_file replaces the whole file, so never pass it a part that read_file returned. \
 Everything else the panel API offers is reachable in three steps: search_api to find the endpoint, describe_api to see its parameters and body, then read_api for GET or write_api for POST, PUT, PATCH and DELETE. \
 Paths look like /api/client/servers/{{server}}/backups; replace every {{placeholder}} with a real value before calling. \
 Admin endpoints under /api/admin only work when the key has admin permissions. \
