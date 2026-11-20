@@ -4,9 +4,13 @@ use shared::{
 };
 
 mod api;
+mod completion;
 mod mcp;
 mod openapi;
+mod panel;
+mod prompts;
 mod proxy;
+mod resources;
 mod settings;
 mod tools;
 

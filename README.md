@@ -47,6 +47,28 @@ claude mcp add --transport http calagopus https://your-panel.com/api/client/exte
 
 The four API tools cover every client and admin endpoint, including those added by other extensions.
 
+## Prompts
+
+Prompts are ready-made jobs you pick in your client, for example as slash commands. Server arguments accept a name, UUID or short ID, and clients that support completion suggest them as you type.
+
+| Prompt | Arguments | What it does |
+| --- | --- | --- |
+| `diagnose_crash` | `server` | Works out why a server crashed, starting from its recent console output |
+| `setup_minecraft_server` | `software`, `version`, `name`, `memory`, `server` (all optional) | Creates or reconfigures a Minecraft server step by step, and asks you before accepting the EULA |
+| `backup_before_update` | `server`, `update` | Makes a backup and checks that it finished before anything is updated |
+| `find_resource_usage` | `server`, `resource` (both optional) | Finds which servers, or what inside one server, use the most CPU, memory, disk or network |
+
+## Resources
+
+Clients that support resources can attach a server's console or files to a conversation.
+
+| Resource | Contents |
+| --- | --- |
+| `calagopus://servers/{server}/console{?lines}` | The last 200 console lines (up to 1000 with `?lines=`), without colour codes |
+| `calagopus://servers/{server}/files/{+path}` | A file (text, or base64 for binary files, up to 1 MB), or a JSON directory listing when the path ends with `/`; listings link every entry and page with `?page=` |
+
+`{server}` is a server UUID or short ID. Both templates complete `{server}`, and the files template completes `{path}`. The resource list holds the console and root directory of every server the key can access, 50 servers per page. Reads use the same panel endpoints as the tools, so the key's and subuser's permissions apply: a subuser without console access neither sees nor reads the console.
+
 ## Security
 
 - Every call runs as the API key, so the panel's own permission checks, rate limits and activity log apply.

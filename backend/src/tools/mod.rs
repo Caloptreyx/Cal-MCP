@@ -2,7 +2,7 @@ mod api;
 mod args;
 mod definitions;
 mod files;
-mod output;
+pub mod output;
 mod servers;
 
 use axum::http::{HeaderName, HeaderValue};

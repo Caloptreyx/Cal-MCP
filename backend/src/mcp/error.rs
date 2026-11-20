@@ -10,6 +10,9 @@ pub const PARSE_ERROR: i64 = -32700;
 pub const INVALID_REQUEST: i64 = -32600;
 pub const METHOD_NOT_FOUND: i64 = -32601;
 pub const INVALID_PARAMS: i64 = -32602;
+pub const INTERNAL_ERROR: i64 = -32603;
+/// Resource not found up to protocol 2025-11-25; later versions use -32602.
+pub const RESOURCE_NOT_FOUND: i64 = -32002;
 pub const HEADER_MISMATCH: i64 = -32020;
 pub const UNSUPPORTED_VERSION: i64 = -32022;
 
