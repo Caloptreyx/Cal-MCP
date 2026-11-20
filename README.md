@@ -111,7 +111,7 @@ Two limits keep an assistant from doing more than you want:
 
 - Admins can turn either limit on for every connection under **Admin → Extensions → Cal MCP**.
 - Users can turn them on for each of their own API keys under **Account → MCP**. These choices can only be changed while signed in, so a key cannot lift its own limits.
-- Limits add up: a key gets the panel-wide limits plus its own. The server enforces them on every panel request the tools make, not only by hiding tools.
+- Limits add up: a key gets the panel-wide limits plus its own, and an OAuth connection also gets the limits of the access picked when approving it (Read only = read-only and client API only, Your servers = client API only). The server enforces them on every panel request the tools make, not only by hiding tools.
 
 ## Security
 

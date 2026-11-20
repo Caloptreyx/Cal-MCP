@@ -44,9 +44,9 @@ pub fn global_router(state: &State) -> OpenApiRouter<State> {
 
 pub fn auth_router(state: &State) -> OpenApiRouter<State> {
     OpenApiRouter::new()
-        .route(&format!("{OAUTH}/register"), post(register))
-        .route(&format!("{OAUTH}/token"), post(token))
-        .route(&format!("{OAUTH}/revoke"), post(revoke))
+        .route(&format!("{OAUTH}/register"), post(register).options(preflight))
+        .route(&format!("{OAUTH}/token"), post(token).options(preflight))
+        .route(&format!("{OAUTH}/revoke"), post(revoke).options(preflight))
         .with_state(state.clone())
 }
 
@@ -61,13 +61,34 @@ pub fn client_router(state: &State) -> OpenApiRouter<State> {
         .with_state(state.clone())
 }
 
-/// Public metadata documents may be fetched by browser-based clients from any origin.
-fn metadata(document: Value) -> Response {
-    let mut response = Json(document).into_response();
+/// The metadata documents and the registration, token and revocation endpoints take no cookies,
+/// so browser-based clients may call them from any origin.
+fn allow_any_origin(response: &mut Response) {
     response.headers_mut().insert(
         header::ACCESS_CONTROL_ALLOW_ORIGIN,
         HeaderValue::from_static("*"),
     );
+}
+
+async fn preflight() -> Response {
+    let mut response = StatusCode::NO_CONTENT.into_response();
+    allow_any_origin(&mut response);
+    let headers = response.headers_mut();
+    headers.insert(
+        header::ACCESS_CONTROL_ALLOW_METHODS,
+        HeaderValue::from_static("POST, OPTIONS"),
+    );
+    headers.insert(
+        header::ACCESS_CONTROL_ALLOW_HEADERS,
+        HeaderValue::from_static("Authorization, Content-Type"),
+    );
+    headers.insert(header::ACCESS_CONTROL_MAX_AGE, HeaderValue::from_static("86400"));
+    response
+}
+
+fn metadata(document: Value) -> Response {
+    let mut response = Json(document).into_response();
+    allow_any_origin(&mut response);
     response
 }
 
@@ -135,6 +156,7 @@ fn oauth_error(error: OAuthError, basic: bool) -> Response {
             HeaderValue::from_static("Basic realm=\"Cal MCP\""),
         );
     }
+    allow_any_origin(&mut response);
     response
 }
 
@@ -143,6 +165,7 @@ fn no_store(status: StatusCode, body: Value) -> Response {
     let headers = response.headers_mut();
     headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     headers.insert(header::PRAGMA, HeaderValue::from_static("no-cache"));
+    allow_any_origin(&mut response);
     response
 }
 
