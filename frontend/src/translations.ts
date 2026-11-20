@@ -60,6 +60,7 @@ const translations = defineTranslations({
       redirect: 'After you decide, your browser goes back to {host}:',
       loopback:
         'This client runs on your own computer (localhost). Only approve it if you started the connection yourself just now.',
+      scope: 'Access',
       apiKey:
         'This adds an API key starting with "MCP" to your account. It cannot manage your API keys, SSH keys, security keys, sessions, email, password or two-factor setup. Disconnect the client at any time under Account > MCP.',
       approve: 'Approve',
