@@ -22,3 +22,7 @@ tracing = { workspace = true }
 url = "2.5"
 utoipa = { workspace = true }
 utoipa-axum = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }

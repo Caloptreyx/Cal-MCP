@@ -4,23 +4,35 @@ mod definitions;
 mod files;
 pub mod output;
 mod servers;
+#[cfg(test)]
+mod tests;
 
-use axum::http::{HeaderName, HeaderValue};
+use crate::{access::Access, upstream::Upstream};
 use serde_json::{Map, Value, json};
-use shared::{
-    State,
-    models::user::{AuthMethod, User},
-};
-use std::net::SocketAddr;
+use std::sync::Arc;
 
 pub use definitions::definitions;
 
 pub struct Ctx {
-    pub state: State,
-    pub user: User,
-    pub auth: AuthMethod,
-    pub addr: SocketAddr,
-    pub forward: Vec<(HeaderName, HeaderValue)>,
+    pub upstream: Arc<dyn Upstream>,
+    /// What this connection may do. The proxy enforces it on every request;
+    /// tool listing and calling follow it so clients see the truth.
+    pub access: Access,
+}
+
+fn read_only_hint(tool: &Value) -> bool {
+    tool.pointer("/annotations/readOnlyHint")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
+/// The tools this connection may use, in a stable order.
+pub fn list(access: Access) -> Vec<Value> {
+    definitions()
+        .iter()
+        .filter(|tool| access.allows_tool(read_only_hint(tool)))
+        .cloned()
+        .collect()
 }
 
 pub async fn call(ctx: &Ctx, params: &Map<String, Value>) -> Result<Value, String> {
@@ -34,6 +46,18 @@ pub async fn call(ctx: &Ctx, params: &Map<String, Value>) -> Result<Value, Strin
         Some(Value::Object(arguments)) => arguments,
         Some(_) => return Err("params.arguments must be an object".into()),
     };
+
+    let Some(definition) = definitions()
+        .iter()
+        .find(|tool| tool["name"].as_str() == Some(name))
+    else {
+        return Err(format!("Unknown tool: {name}"));
+    };
+    if !ctx.access.allows_tool(read_only_hint(definition)) {
+        return Err(format!(
+            "Tool {name} is not available because this MCP connection is read-only"
+        ));
+    }
 
     let outcome = match name {
         "search_api" => api::search(ctx, args).await,

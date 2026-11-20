@@ -136,16 +136,70 @@ pub fn is_server_id(value: &str) -> bool {
 }
 
 /// A canned panel for tests: answers `path?key=value&...` (query keys in
-/// insertion order) and records every request.
+/// insertion order) and records every request. [`MockPanel::on`] adds
+/// handlers for any method, and [`MockPanel::ctx`] hands out a tool context
+/// whose requests all land here.
 #[cfg(test)]
 pub mod mock {
     use super::*;
-    use std::{collections::HashMap, sync::Mutex};
+    use crate::{access::Access, openapi::Index, tools::Ctx, upstream::Upstream};
+    use axum::{
+        body::Body,
+        http::{Request, Response, header},
+    };
+    use std::{
+        collections::HashMap,
+        sync::{Arc, Mutex},
+    };
+
+    type Handler = Box<dyn Fn(&Call) -> Reply + Send + Sync>;
+
+    /// One request a tool sent through [`Upstream`].
+    #[derive(Clone, Debug)]
+    pub struct Call {
+        pub method: Method,
+        pub path: String,
+        pub query: Map<String, Value>,
+        pub body: Vec<u8>,
+    }
+
+    impl Call {
+        pub fn query(&self, key: &str) -> Option<&str> {
+            self.query.get(key).and_then(Value::as_str)
+        }
+
+        pub fn json(&self) -> Value {
+            serde_json::from_slice(&self.body).unwrap_or(Value::Null)
+        }
+
+        pub fn text(&self) -> String {
+            String::from_utf8_lossy(&self.body).into_owned()
+        }
+    }
+
+    pub fn json_reply(status: u16, body: Value) -> Reply {
+        Reply {
+            status,
+            content_type: Some("application/json".into()),
+            body: body.to_string().into_bytes(),
+        }
+    }
+
+    pub fn text_reply(text: &str) -> Reply {
+        Reply {
+            status: 200,
+            content_type: Some("application/octet-stream".into()),
+            body: text.as_bytes().to_vec(),
+        }
+    }
 
     #[derive(Default)]
     pub struct MockPanel {
         replies: HashMap<String, Reply>,
+        handlers: Vec<(Method, String, Handler)>,
+        index: Option<Arc<Index>>,
         pub requests: Mutex<Vec<String>>,
+        calls: Mutex<Vec<Call>>,
     }
 
     pub fn key(path: &str, query: Option<&Map<String, Value>>) -> String {
@@ -190,8 +244,64 @@ pub mod mock {
             )
         }
 
+        /// Answers `method path`, whatever the query, with `handler`. Wins over
+        /// canned replies.
+        pub fn on(
+            mut self,
+            method: Method,
+            path: &str,
+            handler: impl Fn(&Call) -> Reply + Send + Sync + 'static,
+        ) -> Self {
+            self.handlers
+                .push((method, path.to_string(), Box::new(handler)));
+            self
+        }
+
+        /// Answers `method path` with `200` and a fixed JSON body.
+        pub fn on_json(self, method: Method, path: &str, body: Value) -> Self {
+            self.on(method, path, move |_| json_reply(200, body.clone()))
+        }
+
+        /// Uses `spec` as the panel's OpenAPI description.
+        pub fn spec(mut self, spec: &Value) -> Self {
+            self.index = Some(Arc::new(Index::new(spec)));
+            self
+        }
+
+        /// A tool context with `access` whose panel requests all land here.
+        pub fn ctx(self, access: Access) -> (Ctx, Arc<MockPanel>) {
+            let panel = Arc::new(self);
+            (
+                Ctx {
+                    upstream: panel.clone(),
+                    access,
+                },
+                panel,
+            )
+        }
+
         pub fn requested(&self) -> Vec<String> {
             self.requests.lock().unwrap().clone()
+        }
+
+        /// Every request that came through [`Upstream`].
+        pub fn calls(&self) -> Vec<Call> {
+            self.calls.lock().unwrap().clone()
+        }
+
+        fn canned(&self, key: &str) -> Reply {
+            self.requests.lock().unwrap().push(key.to_string());
+            match self.replies.get(key) {
+                Some(reply) => Reply {
+                    status: reply.status,
+                    content_type: reply.content_type.clone(),
+                    body: reply.body.clone(),
+                },
+                None => json_reply(
+                    404,
+                    json!({ "errors": [format!("mock has no reply for {key}")] }),
+                ),
+            }
         }
     }
 
@@ -201,20 +311,59 @@ pub mod mock {
             path: &str,
             query: Option<&Map<String, Value>>,
         ) -> impl Future<Output = Result<Reply, String>> + Send {
-            let key = key(path, query);
-            self.requests.lock().unwrap().push(key.clone());
-            let reply = self.replies.get(&key).map(|reply| Reply {
-                status: reply.status,
-                content_type: reply.content_type.clone(),
-                body: reply.body.clone(),
-            });
-            std::future::ready(Ok(reply.unwrap_or(Reply {
-                status: 404,
-                content_type: Some("application/json".into()),
-                body: json!({ "errors": [format!("mock has no reply for {key}")] })
-                    .to_string()
-                    .into_bytes(),
-            })))
+            std::future::ready(Ok(self.canned(&key(path, query))))
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl Upstream for MockPanel {
+        async fn send(&self, request: Request<Body>) -> Result<Response<Body>, String> {
+            let (parts, body) = request.into_parts();
+            let body = axum::body::to_bytes(body, usize::MAX)
+                .await
+                .map_err(|err| err.to_string())?
+                .to_vec();
+            let query: Map<String, Value> =
+                url::form_urlencoded::parse(parts.uri.query().unwrap_or_default().as_bytes())
+                    .map(|(key, value)| (key.into_owned(), Value::String(value.into_owned())))
+                    .collect();
+            let call = Call {
+                method: parts.method,
+                path: parts.uri.path().to_string(),
+                query,
+                body,
+            };
+
+            let handler = self
+                .handlers
+                .iter()
+                .find(|(method, path, _)| *method == call.method && *path == call.path);
+            let reply = match handler {
+                Some((_, _, handler)) => handler(&call),
+                None if call.method == Method::GET => {
+                    self.canned(&key(&call.path, Some(&call.query)))
+                }
+                None => json_reply(
+                    404,
+                    json!({ "errors": [format!("mock has no handler for {} {}", call.method, call.path)] }),
+                ),
+            };
+            self.calls.lock().unwrap().push(call);
+
+            let mut response = Response::builder().status(reply.status);
+            if let Some(content_type) = &reply.content_type {
+                response = response.header(header::CONTENT_TYPE, content_type);
+            }
+            response
+                .body(Body::from(reply.body))
+                .map_err(|err| err.to_string())
+        }
+
+        async fn openapi(&self) -> Result<Arc<Index>, String> {
+            Ok(self
+                .index
+                .clone()
+                .unwrap_or_else(|| Arc::new(Index::new(&json!({ "paths": {} })))))
         }
     }
 }

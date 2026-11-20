@@ -3,7 +3,7 @@ mod error;
 mod lifecycle;
 mod protocol;
 
-use crate::tools::Ctx;
+use crate::{tools::Ctx, upstream::LiveUpstream};
 use axum::{
     Json,
     body::Bytes,
@@ -12,13 +12,13 @@ use axum::{
     response::{IntoResponse, Response},
     routing::post,
 };
-use error::{INVALID_REQUEST, Rejection};
+use error::{INTERNAL_ERROR, INVALID_REQUEST, Rejection};
 use serde_json::json;
 use shared::{
     GetState, State,
     models::user::{AuthMethod, GetAuthMethod, GetUser},
 };
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc};
 use utoipa_axum::router::OpenApiRouter;
 
 const FORWARDED_HEADERS: [HeaderName; 3] = [
@@ -64,17 +64,40 @@ async fn handle(
         return StatusCode::ACCEPTED.into_response();
     };
 
-    let ctx = Ctx {
-        state: state.0.clone(),
-        user: user.0,
-        auth: auth.0.as_ref().clone(),
-        addr,
-        forward: FORWARDED_HEADERS
-            .iter()
-            .filter_map(|name| headers.get(name).map(|value| (name.clone(), value.clone())))
-            .collect(),
+    // Restrictions come from the settings, so a settings store that cannot be
+    // read must not fall back to an unrestricted default.
+    let extension_settings = match crate::settings::load_result(&state).await {
+        Ok(settings) => settings,
+        Err(err) => {
+            tracing::error!("failed to load Cal MCP settings: {err:#}");
+            return Rejection::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Some(id.clone()),
+                INTERNAL_ERROR,
+                "Could not load the MCP settings",
+            )
+            .into_response();
+        }
     };
-    let extension_settings = crate::settings::load(&state).await;
+
+    let auth = auth.0.as_ref().clone();
+    let api_key = match &auth {
+        AuthMethod::ApiKey(key) => Some(key.uuid),
+        _ => None,
+    };
+    let ctx = Ctx {
+        access: extension_settings.access_for(api_key),
+        upstream: Arc::new(LiveUpstream {
+            state: state.0.clone(),
+            user: user.0,
+            auth,
+            addr,
+            forward: FORWARDED_HEADERS
+                .iter()
+                .filter_map(|name| headers.get(name).map(|value| (name.clone(), value.clone())))
+                .collect(),
+        }),
+    };
 
     match dispatch::dispatch(&ctx, &prepared, &extension_settings).await {
         Ok(result) => Json(json!({

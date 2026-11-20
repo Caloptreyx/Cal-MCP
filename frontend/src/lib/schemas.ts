@@ -27,6 +27,30 @@ export const settingsSchema = z.object({
     ),
   displayTitle: displayTextSchema(96),
   panelName: displayTextSchema(64),
+  readOnly: z.boolean(),
+  clientOnly: z.boolean(),
 });
 
 export type Settings = z.infer<typeof settingsSchema>;
+
+export const accessSchema = z.object({
+  readOnly: z.boolean(),
+  clientOnly: z.boolean(),
+});
+
+export type Access = z.infer<typeof accessSchema>;
+
+export const keyAccessSchema = z.object({
+  panel: accessSchema,
+  keys: z.array(accessSchema.extend({ apiKey: z.string() })),
+});
+
+export type KeyAccess = z.infer<typeof keyAccessSchema>;
+
+export const apiKeySchema = z.object({
+  uuid: z.string(),
+  name: z.string(),
+  keyStart: z.string(),
+});
+
+export type ApiKey = z.infer<typeof apiKeySchema>;

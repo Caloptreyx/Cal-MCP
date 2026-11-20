@@ -9,6 +9,7 @@ import Spinner from '@/elements/feedback/Spinner.tsx';
 import getBranding from '../api/getBranding.ts';
 import ClientSetupCard from '../elements/ClientSetupCard.tsx';
 import EndpointCard from '../elements/EndpointCard.tsx';
+import KeyAccessCard from '../elements/KeyAccessCard.tsx';
 import { type Branding, endpointUrl } from '../lib/clients.ts';
 import { useExtTranslations } from '../translations.ts';
 
@@ -46,6 +47,7 @@ export default function McpPage() {
         <div className='grid grid-cols-1 xl:grid-cols-2 items-start gap-4'>
           <EndpointCard url={url} />
           <ClientSetupCard url={url} branding={branding} />
+          <KeyAccessCard />
         </div>
       )}
     </AccountContentContainer>

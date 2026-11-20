@@ -3,6 +3,7 @@ use shared::{
     extensions::{Extension, ExtensionRouteBuilder, ExtensionUpdateInfo},
 };
 
+mod access;
 mod api;
 mod completion;
 mod mcp;
@@ -13,6 +14,7 @@ mod proxy;
 mod resources;
 mod settings;
 mod tools;
+mod upstream;
 
 pub const PACKAGE: &str = "dev.caloptreyx.calmcp";
 

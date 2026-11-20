@@ -68,6 +68,18 @@ Clients that support resources can attach a server's console or files to a conve
 | `calagopus://servers/{server}/files/{+path}` | A file (text, or base64 for binary files, up to 1 MB), or a JSON directory listing when the path ends with `/`; listings link every entry and page with `?page=` |
 
 `{server}` is a server UUID or short ID. Both templates complete `{server}`, and the files template completes `{path}`. The resource list holds the console and root directory of every server the key can access, 50 servers per page. Reads use the same panel endpoints as the tools, so the key's and subuser's permissions apply: a subuser without console access neither sees nor reads the console.
+## Access limits
+
+Two limits keep an assistant from doing more than you want:
+
+| Limit | What it allows |
+| --- | --- |
+| Read-only | Only GET requests and read tools. Tools that change anything are hidden from the tool list and refused if called. |
+| Client API only | No requests to `/api/admin`, even when the key has admin permissions. |
+
+- Admins can turn either limit on for every connection under **Admin → Extensions → Cal MCP**.
+- Users can turn them on for each of their own API keys under **Account → MCP**. These choices can only be changed while signed in, so a key cannot lift its own limits.
+- Limits add up: a key gets the panel-wide limits plus its own. The server enforces them on every panel request the tools make, not only by hiding tools.
 
 ## Security
 

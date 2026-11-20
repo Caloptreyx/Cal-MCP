@@ -8,6 +8,7 @@ import Button from '@/elements/buttons/Button.tsx';
 import TitleCard from '@/elements/data-display/TitleCard.tsx';
 import ErrorState from '@/elements/feedback/ErrorState.tsx';
 import Spinner from '@/elements/feedback/Spinner.tsx';
+import Switch from '@/elements/input/Switch.tsx';
 import TextInput from '@/elements/input/TextInput.tsx';
 import Stack from '@/elements/layout/Stack.tsx';
 import Text from '@/elements/typography/Text.tsx';
@@ -27,7 +28,7 @@ export default function ConfigurationPage() {
   const [saving, setSaving] = useState(false);
 
   const form = useForm<Settings>({
-    initialValues: DEFAULT_BRANDING,
+    initialValues: { ...DEFAULT_BRANDING, readOnly: false, clientOnly: false },
     validateInputOnBlur: true,
     validate: zod4Resolver(settingsSchema),
   });
@@ -69,7 +70,7 @@ export default function ConfigurationPage() {
 
   if (!canManage) {
     return (
-      <TitleCard title='Branding' icon={<FontAwesomeIcon icon={faTags} />}>
+      <TitleCard title='Branding and access' icon={<FontAwesomeIcon icon={faTags} />}>
         <Text size='sm' c='dimmed'>
           You need the extensions.manage permission to change these settings.
         </Text>
@@ -78,7 +79,7 @@ export default function ConfigurationPage() {
   }
 
   return (
-    <TitleCard title='Branding' icon={<FontAwesomeIcon icon={faTags} />}>
+    <TitleCard title='Branding and access' icon={<FontAwesomeIcon icon={faTags} />}>
       {loading ? (
         <Spinner.Centered />
       ) : loadError ? (
@@ -110,6 +111,23 @@ export default function ConfigurationPage() {
               description='Panel name used in the assistant instructions and the setup prompt.'
               placeholder='Calagopus'
               {...form.getInputProps('panelName')}
+            />
+
+            <Text size='sm' c='dimmed'>
+              Restrictions for every MCP connection, enforced by the server whatever API key is used. Users can add
+              these limits to their own keys under Account → MCP, but cannot lift them.
+            </Text>
+
+            <Switch
+              label='Read-only'
+              description='Only GET requests and read tools. Write tools are hidden and refused.'
+              {...form.getInputProps('readOnly', { type: 'checkbox' })}
+            />
+
+            <Switch
+              label='Client API only'
+              description='Refuse every request to /api/admin, even for keys with admin permissions.'
+              {...form.getInputProps('clientOnly', { type: 'checkbox' })}
             />
 
             <Button type='submit' loading={saving} disabled={saving || !loaded || !form.isValid()} className='w-fit!'>

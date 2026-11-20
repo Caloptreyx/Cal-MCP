@@ -4,7 +4,6 @@ mod query;
 use crate::tools::Ctx;
 use axum::{
     body::Body,
-    extract::ConnectInfo,
     http::{Method, Request, header},
 };
 use serde_json::{Map, Value};
@@ -27,6 +26,7 @@ pub async fn call(
     body: Option<&Value>,
 ) -> Result<Reply, String> {
     path::check(path)?;
+    ctx.access.check_request(&method, path)?;
 
     let mut uri = path.to_string();
     if let Some(query) = query {
@@ -41,9 +41,6 @@ pub async fn call(
         .method(method)
         .uri(&uri)
         .header(header::ACCEPT, "application/json");
-    for (name, value) in &ctx.forward {
-        builder = builder.header(name, value);
-    }
 
     let request_body = match body {
         None | Some(Value::Null) => Body::empty(),
@@ -57,19 +54,13 @@ pub async fn call(
         }
     };
 
-    let mut request = builder
+    let request = builder
         .body(request_body)
         .map_err(|err| format!("Invalid request: {err}"))?;
-    request.extensions_mut().insert(ConnectInfo(ctx.addr));
 
-    let response = tokio::time::timeout(
-        TIMEOUT,
-        ctx.state
-            .send_authenticated_router_oneshot(request, ctx.user.clone(), ctx.auth.clone()),
-    )
-    .await
-    .map_err(|_| "The panel did not answer within 120 seconds".to_string())?
-    .map_err(|err| err.to_string())?;
+    let response = tokio::time::timeout(TIMEOUT, ctx.upstream.send(request))
+        .await
+        .map_err(|_| "The panel did not answer within 120 seconds".to_string())??;
 
     let status = response.status().as_u16();
     let content_type = response

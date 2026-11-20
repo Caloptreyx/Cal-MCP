@@ -1,12 +1,12 @@
 use super::protocol::Era;
-use crate::settings::ExtensionSettingsData;
+use crate::{access::Access, settings::ExtensionSettingsData};
 use serde_json::{Map, Value, json};
 
 pub const MODERN: &str = "2026-07-28";
 pub const LEGACY: [&str; 4] = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 
-fn instructions(settings: &ExtensionSettingsData) -> String {
-    format!(
+fn instructions(settings: &ExtensionSettingsData, access: Access) -> String {
+    let mut text = format!(
         "{} manages a {} game panel with the permissions of the API key it was connected with. \
 Use the server tools (list_servers, get_server, power_server, send_command, read_console, list_files, read_file, write_file) for everyday server work. \
 Everything else the panel API offers is reachable in three steps: search_api to find the endpoint, describe_api to see its parameters and body, then read_api for GET or write_api for POST, PUT, PATCH and DELETE. \
@@ -14,7 +14,12 @@ Paths look like /api/client/servers/{{server}}/backups; replace every {{placehol
 Admin endpoints under /api/admin only work when the key has admin permissions. \
 Server consoles and files are also readable as resources: calagopus://servers/{{server}}/console and calagopus://servers/{{server}}/files/{{path}}.",
         settings.display_title, settings.panel_name
-    )
+    );
+    if let Some(limits) = access.describe() {
+        text.push(' ');
+        text.push_str(limits);
+    }
+    text
 }
 
 pub fn supported_versions() -> Vec<&'static str> {
@@ -38,7 +43,11 @@ fn capabilities() -> Value {
     })
 }
 
-pub fn initialize(params: &Map<String, Value>, settings: &ExtensionSettingsData) -> Value {
+pub fn initialize(
+    params: &Map<String, Value>,
+    settings: &ExtensionSettingsData,
+    access: Access,
+) -> Value {
     let requested = params
         .get("protocolVersion")
         .and_then(Value::as_str)
@@ -53,15 +62,15 @@ pub fn initialize(params: &Map<String, Value>, settings: &ExtensionSettingsData)
         "protocolVersion": version,
         "capabilities": capabilities(),
         "serverInfo": server_info(settings),
-        "instructions": instructions(settings),
+        "instructions": instructions(settings, access),
     })
 }
 
-pub fn discover(settings: &ExtensionSettingsData) -> Value {
+pub fn discover(settings: &ExtensionSettingsData, access: Access) -> Value {
     json!({
         "supportedVersions": supported_versions(),
         "capabilities": capabilities(),
-        "instructions": instructions(settings),
+        "instructions": instructions(settings, access),
     })
 }
 
@@ -87,8 +96,8 @@ mod tests {
     fn both_eras_declare_prompts_resources_and_completions() {
         let settings = ExtensionSettingsData::default();
         for capabilities in [
-            initialize(&Map::new(), &settings)["capabilities"].clone(),
-            discover(&settings)["capabilities"].clone(),
+            initialize(&Map::new(), &settings, Access::NONE)["capabilities"].clone(),
+            discover(&settings, Access::NONE)["capabilities"].clone(),
         ] {
             assert_eq!(capabilities["prompts"], json!({ "listChanged": false }));
             assert_eq!(

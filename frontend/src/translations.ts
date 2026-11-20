@@ -22,6 +22,16 @@ const translations = defineTranslations({
       claudeDesktop: 'Add this to claude_desktop_config.json. It runs mcp-remote, which needs Node.js.',
       replace: 'Replace YOUR_API_KEY with your key.',
     },
+    access: {
+      title: 'Limit what each key can do',
+      description:
+        'These limits apply only when a key connects through MCP, and the server enforces them. Read-only allows only reading; client API only blocks /api/admin.',
+      panel: 'Your administrator applies some of these limits to every connection, so they cannot be turned off here.',
+      noKeys: 'You have no API keys yet.',
+      readOnly: 'Read-only',
+      clientOnly: 'Client API only',
+      saved: 'Key limits saved.',
+    },
     safety: {
       title: 'Keep the key scoped',
       description:

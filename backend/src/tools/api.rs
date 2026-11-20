@@ -3,15 +3,21 @@ use super::{
     args::{integer, method, object, optional_text, text},
     output::{request, truncate},
 };
-use crate::openapi::{self, Scope};
+use crate::openapi::Scope;
 use axum::http::Method;
 use serde_json::{Map, Value};
 
 pub async fn search(ctx: &Ctx, args: &Map<String, Value>) -> Result<String, String> {
     let query = text(args, "query")?;
-    let scope = Scope::parse(optional_text(args, "scope")?)?;
+    let mut scope = Scope::parse(optional_text(args, "scope")?)?;
+    if ctx.access.client_only {
+        if scope == Scope::Admin {
+            return Err("This MCP connection is client-only, so admin endpoints are hidden.".into());
+        }
+        scope = Scope::Client;
+    }
     let limit = integer(args, "limit", 15, 1, 50)? as usize;
-    let index = openapi::load(&ctx.state).await?;
+    let index = ctx.upstream.openapi().await?;
     let found = index.search(query, scope, limit);
 
     if found.is_empty() {
@@ -30,7 +36,7 @@ pub async fn search(ctx: &Ctx, args: &Map<String, Value>) -> Result<String, Stri
 pub async fn describe(ctx: &Ctx, args: &Map<String, Value>) -> Result<String, String> {
     let method = text(args, "method")?;
     let path = text(args, "path")?;
-    let index = openapi::load(&ctx.state).await?;
+    let index = ctx.upstream.openapi().await?;
     let operation = index.find(method, path).ok_or_else(|| {
         format!(
             "No {} endpoint at {path}. Use search_api to find the right path.",

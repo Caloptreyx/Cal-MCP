@@ -28,17 +28,17 @@ pub async fn dispatch(
     let reject = |failure| reject(prepared, failure);
 
     match prepared.method.as_str() {
-        "initialize" => Ok(lifecycle::initialize(params, settings)),
+        "initialize" => Ok(lifecycle::initialize(params, settings, ctx.access)),
         "server/discover" => Ok(cacheable(
             era,
-            lifecycle::discover(settings),
+            lifecycle::discover(settings, ctx.access),
             LIST_TTL_MS,
             "private",
         )),
         "ping" => Ok(json!({})),
         "tools/list" => Ok(cacheable(
             era,
-            json!({ "tools": tools::definitions() }),
+            json!({ "tools": tools::list(ctx.access) }),
             LIST_TTL_MS,
             "private",
         )),
@@ -168,5 +168,65 @@ mod tests {
         let mut params = Map::new();
         params.insert("cursor".into(), json!(""));
         assert!(single_page(&params).is_err());
+    }
+}
+
+#[cfg(test)]
+mod access_tests {
+    use super::*;
+    use crate::{access::Access, panel::mock::MockPanel};
+
+    fn request(method: &str) -> Prepared {
+        Prepared {
+            id: Some(json!(1)),
+            method: method.into(),
+            params: Map::new(),
+            era: Era::Legacy,
+        }
+    }
+
+    async fn run(access: Access, method: &str) -> Value {
+        let (ctx, _) = MockPanel::default().ctx(access);
+        dispatch(&ctx, &request(method), &ExtensionSettingsData::default())
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn tools_list_follows_the_connection_access() {
+        let read_only = Access {
+            read_only: true,
+            client_only: false,
+        };
+        let all = run(Access::NONE, "tools/list").await;
+        let limited = run(read_only, "tools/list").await;
+        let has = |result: &Value, name: &str| {
+            result["tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|tool| tool["name"] == json!(name))
+        };
+
+        assert!(has(&all, "write_api"));
+        assert!(!has(&limited, "write_api"));
+        assert!(has(&limited, "read_api"));
+    }
+
+    #[tokio::test]
+    async fn instructions_mention_restrictions() {
+        let open = run(Access::NONE, "initialize").await;
+        assert!(!open["instructions"].as_str().unwrap().contains("read-only"));
+
+        let limited = run(
+            Access {
+                read_only: true,
+                client_only: true,
+            },
+            "initialize",
+        )
+        .await;
+        let text = limited["instructions"].as_str().unwrap();
+        assert!(text.contains("read-only and client-only"), "{text}");
     }
 }
