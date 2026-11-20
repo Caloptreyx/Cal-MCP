@@ -188,7 +188,13 @@ impl Store for PgStore {
     }
 
     async fn create_grant(&self, new: &NewGrant) -> Result<Grant, anyhow::Error> {
-        let user_permissions = all_permissions(shared::permissions::get_user_permissions().list());
+        // No credential management: see `CREDENTIAL_PERMISSIONS`.
+        let user_permissions: Vec<CompactString> = super::grant_user_permissions(
+            shared::permissions::get_user_permissions().list(),
+        )
+        .into_iter()
+        .map(CompactString::from)
+        .collect();
         let server_permissions =
             all_permissions(shared::permissions::get_server_permissions().list());
         // Client-only grants get no admin permissions, so the panel itself refuses /api/admin.
@@ -298,6 +304,35 @@ impl Store for PgStore {
             .execute(&mut *transaction)
             .await?;
         insert_tokens(&mut transaction, grant.uuid, access, refresh).await?;
+
+        // Keep each grant's token rows bounded however often it refreshes: the newest access
+        // tokens (older ones may still be in flight for a moment) and the newest spent refresh
+        // tokens, which are enough to catch a replay of a recently rotated one.
+        sqlx::query(
+            "DELETE FROM dev_caloptreyx_calmcp_oauth_tokens
+            WHERE grant_uuid = $1 AND kind = 'access' AND (expires <= $2 OR digest NOT IN (
+                SELECT digest FROM dev_caloptreyx_calmcp_oauth_tokens
+                WHERE grant_uuid = $1 AND kind = 'access'
+                ORDER BY expires DESC LIMIT $3
+            ))",
+        )
+        .bind(grant.uuid)
+        .bind(now)
+        .bind(super::KEPT_ACCESS_TOKENS)
+        .execute(&mut *transaction)
+        .await?;
+        sqlx::query(
+            "DELETE FROM dev_caloptreyx_calmcp_oauth_tokens
+            WHERE grant_uuid = $1 AND kind = 'refresh' AND used AND digest NOT IN (
+                SELECT digest FROM dev_caloptreyx_calmcp_oauth_tokens
+                WHERE grant_uuid = $1 AND kind = 'refresh' AND used
+                ORDER BY expires DESC LIMIT $2
+            )",
+        )
+        .bind(grant.uuid)
+        .bind(super::KEPT_SPENT_REFRESH_TOKENS)
+        .execute(&mut *transaction)
+        .await?;
 
         transaction.commit().await?;
 

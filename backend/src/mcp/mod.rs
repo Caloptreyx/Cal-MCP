@@ -16,7 +16,7 @@ use error::{INTERNAL_ERROR, INVALID_REQUEST, Rejection};
 use serde_json::json;
 use shared::{
     GetState, State,
-    models::user::{AuthMethod, GetAuthMethod, GetUser},
+    models::user::{AuthMethod, GetAuthMethod, GetUser, GetUserImpersonator},
 };
 use std::{net::SocketAddr, sync::Arc};
 use utoipa_axum::router::OpenApiRouter;
@@ -40,6 +40,7 @@ async fn handle(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     user: GetUser,
     auth: GetAuthMethod,
+    impersonator: GetUserImpersonator,
     oauth: Option<Extension<OAuthGrant>>,
     headers: HeaderMap,
     body: Bytes,
@@ -48,14 +49,12 @@ async fn handle(
         return rejection.into_response();
     }
 
-    if !matches!(auth.0.as_ref(), AuthMethod::ApiKey(_)) {
-        return Rejection::new(
-            StatusCode::FORBIDDEN,
-            None,
-            INVALID_REQUEST,
-            "Connect with OAuth or with a panel API key sent as \"Authorization: Bearer <key>\"",
-        )
-        .into_response();
+    if let Some(message) = credential_error(
+        matches!(auth.0.as_ref(), AuthMethod::ApiKey(_)),
+        impersonator.is_some(),
+    ) {
+        return Rejection::new(StatusCode::FORBIDDEN, None, INVALID_REQUEST, message)
+            .into_response();
     }
 
     let prepared = match protocol::prepare(&headers, &body) {
@@ -119,6 +118,22 @@ async fn handle(
     }
 }
 
+/// Only API keys (and OAuth grants, which run as one) may connect, and never while
+/// impersonating: the panel requests below run as the impersonated user without the
+/// impersonation marker, which would skip the panel's "not while impersonating" checks such as
+/// creating API keys for that user.
+fn credential_error(api_key: bool, impersonating: bool) -> Option<&'static str> {
+    if !api_key {
+        return Some(
+            "Connect with OAuth or with a panel API key sent as \"Authorization: Bearer <key>\"",
+        );
+    }
+    if impersonating {
+        return Some("Impersonating a user (the Calagopus-User header) is not supported over MCP");
+    }
+    None
+}
+
 async fn check_origin(state: &State, headers: &HeaderMap) -> Option<Box<Rejection>> {
     let origin = headers.get(header::ORIGIN)?;
 
@@ -137,5 +152,18 @@ async fn check_origin(state: &State, headers: &HeaderMap) -> Option<Box<Rejectio
             INVALID_REQUEST,
             "Origin not allowed",
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::credential_error;
+
+    #[test]
+    fn only_api_keys_connect_and_never_while_impersonating() {
+        assert_eq!(credential_error(true, false), None);
+        assert!(credential_error(false, false).unwrap().contains("API key"));
+        assert!(credential_error(false, true).is_some());
+        assert!(credential_error(true, true).unwrap().contains("Impersonating"));
     }
 }

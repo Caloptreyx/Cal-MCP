@@ -289,6 +289,31 @@ fn require_session(auth: &GetAuthMethod, impersonator: &GetUserImpersonator) -> 
     Ok(())
 }
 
+/// Whether a browser request came from another site or origin. The panel's JSON-only payloads
+/// already need a CORS preflight it never grants; this also stops pages on sibling subdomains,
+/// which count as the same site for the session cookie.
+pub fn cross_origin(headers: &HeaderMap, urls: &Urls) -> bool {
+    let header = |name: &str| headers.get(name).and_then(|value| value.to_str().ok());
+
+    if header("sec-fetch-site").is_some_and(|site| site != "same-origin" && site != "none") {
+        return true;
+    }
+
+    let app_origin = url::Url::parse(&urls.issuer)
+        .map(|url| url.origin().ascii_serialization())
+        .unwrap_or_default();
+    header("origin").is_some_and(|origin| origin != app_origin)
+}
+
+fn require_same_origin(headers: &HeaderMap, urls: &Urls) -> Result<(), ApiResponse> {
+    if cross_origin(headers, urls) {
+        return Err(ApiResponse::error("this request must come from the panel itself")
+            .with_status(StatusCode::FORBIDDEN));
+    }
+
+    Ok(())
+}
+
 fn fatal(message: String) -> ApiResponse {
     ApiResponse::error(message).with_status(StatusCode::BAD_REQUEST)
 }
@@ -348,11 +373,13 @@ async fn decide(
     permissions: GetPermissionManager,
     user: GetUser,
     activity_logger: GetUserActivityLogger,
+    headers: HeaderMap,
     shared::Payload(decision): shared::Payload<Decision>,
 ) -> ApiResponseResult {
     require_session(&auth, &impersonator)?;
 
     let urls = Urls::load(&state).await?;
+    require_same_origin(&headers, &urls)?;
     let store = PgStore::new(&state);
 
     let request = match flow::authorize_request(&store, &urls, &decision.query).await {

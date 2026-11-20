@@ -1194,3 +1194,121 @@ fn consent_page_shows_where_the_code_goes() {
     assert!(validate::is_loopback_redirect("http://127.0.0.1:1234/cb"));
     assert!(!validate::is_loopback_redirect(REDIRECT));
 }
+
+/// The panel answers 403 when `PermissionManager::has_user_permission` finds the permission
+/// missing from the key's `CredentialScope`, the same check `covers` runs.
+fn grant_key_scope() -> shared::models::user::CredentialScope {
+    // A sample of what the panel defines; the real list is only filled in at runtime.
+    let defined: Vec<String> = [
+        "account.infos",
+        "account.email",
+        "account.password",
+        "account.two-factor",
+        "account.avatar",
+        "servers.read",
+        "api-keys.create",
+        "api-keys.read",
+        "api-keys.recreate",
+        "ssh-keys.create",
+        "ssh-keys.read",
+        "security-keys.create",
+        "sessions.read",
+        "sessions.delete",
+        "command-snippets.create",
+        "activity.read",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect();
+
+    let to_scope = |permissions: Vec<String>| {
+        std::sync::Arc::new(
+            permissions
+                .into_iter()
+                .map(compact_str::CompactString::from)
+                .collect::<Vec<_>>(),
+        )
+    };
+    shared::models::user::CredentialScope::ApiKey {
+        user: to_scope(super::grant_user_permissions(&defined)),
+        admin: to_scope(Vec::new()),
+        server: to_scope(Vec::new()),
+    }
+}
+
+#[test]
+fn grant_keys_cannot_create_api_keys_or_ssh_keys() {
+    let scope = grant_key_scope();
+    let allowed = |permission: &str| scope.covers(&[permission.into()], &[], &[]);
+
+    // POST /api/client/account/api-keys, .../recreate and /ssh-keys check these; with them
+    // missing, a client or full scope connection gets 403 and cannot mint a credential that
+    // outlives disconnecting it.
+    for permission in super::CREDENTIAL_PERMISSIONS {
+        assert!(!allowed(permission), "{permission}");
+    }
+    for permission in ["servers.read", "account.infos", "api-keys.read", "ssh-keys.read", "sessions.read"] {
+        assert!(allowed(permission), "{permission}");
+    }
+}
+
+#[test]
+fn oauth_connections_honour_the_keys_allowed_ips() {
+    use super::gate::key_allows_ip;
+    use std::net::IpAddr;
+
+    let ip = |value: &str| value.parse::<IpAddr>().unwrap();
+    let networks: Vec<sqlx::types::ipnetwork::IpNetwork> =
+        vec!["10.0.0.0/8".parse().unwrap(), "2001:db8::/32".parse().unwrap()];
+
+    assert!(key_allows_ip(&[], ip("203.0.113.9")));
+    assert!(key_allows_ip(&networks, ip("10.1.2.3")));
+    assert!(key_allows_ip(&networks, ip("2001:db8::1")));
+    assert!(!key_allows_ip(&networks, ip("203.0.113.9")));
+}
+
+#[test]
+fn consent_decisions_must_come_from_the_panel_origin() {
+    use super::routes::cross_origin;
+    use axum::http::{HeaderMap, HeaderValue};
+
+    let urls = urls();
+    let origin = url::Url::parse(&urls.issuer).unwrap().origin().ascii_serialization();
+    fn headers(pairs: &[(&'static str, &str)]) -> HeaderMap {
+        let mut map = HeaderMap::new();
+        for (name, value) in pairs {
+            map.insert(*name, HeaderValue::from_str(value).unwrap());
+        }
+        map
+    }
+
+    assert!(!cross_origin(&headers(&[]), &urls));
+    assert!(!cross_origin(
+        &headers(&[("origin", origin.as_str()), ("sec-fetch-site", "same-origin")]),
+        &urls
+    ));
+    assert!(cross_origin(&headers(&[("origin", "https://evil.example")]), &urls));
+    // A sibling subdomain is the same site for the session cookie, but not the same origin.
+    assert!(cross_origin(&headers(&[("sec-fetch-site", "same-site")]), &urls));
+    assert!(cross_origin(
+        &headers(&[("origin", origin.as_str()), ("sec-fetch-site", "cross-site")]),
+        &urls
+    ));
+}
+
+#[tokio::test]
+async fn a_read_grant_cannot_fetch_console_or_upload_credentials() {
+    let (ctx, panel) = MockPanel::default()
+        .on_json(Method::GET, "/api/client/servers/0a1b2c3d/websocket", json!({ "token": "jwt" }))
+        .on_json(Method::GET, "/api/client/servers/0a1b2c3d/files/upload", json!({ "url": "u" }))
+        .ctx(Access::NONE.union(Scope::Read.access()));
+
+    for path in [
+        "/api/client/servers/0a1b2c3d/websocket",
+        "/api/client/servers/0a1b2c3d/files/upload",
+    ] {
+        let result = call_tool(&ctx, "read_api", json!({ "path": path })).await.unwrap();
+        assert_eq!(result["isError"], json!(true), "{path}: {result}");
+    }
+    assert!(panel.calls().is_empty());
+}

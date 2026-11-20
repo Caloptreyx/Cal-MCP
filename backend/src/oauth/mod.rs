@@ -46,6 +46,45 @@ pub const REFRESH_TTL_SECONDS: i64 = 30 * 24 * 60 * 60;
 pub const CODE_TTL_SECONDS: i64 = 120;
 /// Connected clients per user; each one holds a panel API key.
 pub const MAX_GRANTS_PER_USER: i64 = 25;
+/// Token rows kept per grant when it refreshes, so a client refreshing in a loop cannot grow
+/// the table without bound.
+pub const KEPT_ACCESS_TOKENS: i64 = 5;
+pub const KEPT_SPENT_REFRESH_TOKENS: i64 = 20;
+
+/// User permissions an OAuth grant's API key never gets: everything that creates or changes a
+/// way to sign in or call the panel. With them, a connected client could mint an API key or SSH
+/// key that outlives disconnecting it, or lock the user out. Reading them stays allowed. Anyone
+/// who wants an MCP client to manage credentials can connect it with a normal API key instead.
+pub const CREDENTIAL_PERMISSIONS: [&str; 17] = [
+    "account.email",
+    "account.password",
+    "account.password-login",
+    "account.two-factor",
+    "api-keys.create",
+    "api-keys.update",
+    "api-keys.delete",
+    "api-keys.recreate",
+    "ssh-keys.create",
+    "ssh-keys.update",
+    "ssh-keys.delete",
+    "security-keys.create",
+    "security-keys.update",
+    "security-keys.delete",
+    "oauth-links.create",
+    "oauth-links.delete",
+    "sessions.delete",
+];
+
+/// The user permissions of a grant's API key, out of every one the panel defines.
+pub fn grant_user_permissions<'a>(all: impl IntoIterator<Item = &'a String>) -> Vec<String> {
+    let mut permissions: Vec<String> = all
+        .into_iter()
+        .filter(|permission| !CREDENTIAL_PERMISSIONS.contains(&permission.as_str()))
+        .cloned()
+        .collect();
+    permissions.sort_unstable();
+    permissions
+}
 
 /// What a grant allows, from narrowest to broadest. A broader scope includes the narrower ones.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]

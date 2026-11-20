@@ -48,6 +48,12 @@ impl Access {
             ));
         }
 
+        if self.read_only && issues_credentials(path) {
+            return Err(
+                "This MCP connection is read-only, so endpoints that hand out console, upload or node credentials (or change two-factor setup) are blocked.".into(),
+            );
+        }
+
         Ok(())
     }
 
@@ -71,6 +77,61 @@ impl Access {
             ),
         }
     }
+}
+
+/// GET endpoints that hand out credentials which can change things outside the panel API (a
+/// Wings websocket token with console and power rights, a signed upload URL, node and database
+/// agent tokens), or that write state despite being GET (two-factor setup stores a new secret).
+/// A read-only connection must not reach them. `*` stands for one path segment.
+const CREDENTIAL_ENDPOINTS: &[&[&str]] = &[
+    &["api", "client", "servers", "*", "websocket"],
+    &["api", "client", "servers", "*", "files", "upload"],
+    &["api", "client", "account", "two-factor"],
+    &["api", "admin", "nodes", "*", "token"],
+    &["api", "admin", "nodes", "*", "config"],
+    &["api", "admin", "database-agent-hosts", "*", "token"],
+    &["api", "admin", "database-agent-hosts", "*", "config"],
+];
+
+pub(crate) fn percent_decode(segment: &str) -> String {
+    let bytes = segment.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        let decoded = (bytes[index] == b'%')
+            .then(|| segment.get(index + 1..index + 3))
+            .flatten()
+            .and_then(|hex| u8::from_str_radix(hex, 16).ok());
+        match decoded {
+            Some(byte) => {
+                out.push(byte);
+                index += 3;
+            }
+            None => {
+                out.push(bytes[index]);
+                index += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// Compares decoded, case-folded segments so encoding or case tricks cannot slip past.
+fn issues_credentials(path: &str) -> bool {
+    let path = path.split(['?', '#']).next().unwrap_or_default();
+    let segments: Vec<String> = path
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .map(|segment| percent_decode(segment).to_ascii_lowercase())
+        .collect();
+
+    CREDENTIAL_ENDPOINTS.iter().any(|pattern| {
+        pattern.len() == segments.len()
+            && pattern
+                .iter()
+                .zip(&segments)
+                .all(|(expected, actual)| *expected == "*" || expected == actual)
+    })
 }
 
 #[cfg(test)]
@@ -136,6 +197,38 @@ mod tests {
                 .check_request(&Method::GET, "/api/client/servers/admin")
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn read_only_blocks_gets_that_hand_out_write_credentials() {
+        for path in [
+            "/api/client/servers/0a1b2c3d/websocket",
+            "/api/client/servers/0a1b2c3d/websocket/",
+            "/api/client/servers/0a1b2c3d/files/upload",
+            "/api/client/servers/0a1b2c3d/files/%75pload",
+            "/api/client/servers/0a1b2c3d/WebSocket",
+            "/api/client/account/two-factor",
+            "/api/admin/nodes/5f0e/token",
+            "/api/admin/nodes/5f0e/config",
+            "/api/admin/database-agent-hosts/5f0e/token",
+            "/api/admin/database-agent-hosts/5f0e/config",
+        ] {
+            let err = READ_ONLY.check_request(&Method::GET, path).unwrap_err();
+            assert!(err.contains("read-only"), "{path}: {err}");
+            // Without read-only these are ordinary requests the panel's permissions decide.
+            assert!(Access::NONE.check_request(&Method::GET, path).is_ok(), "{path}");
+        }
+
+        for path in [
+            "/api/client/servers/0a1b2c3d",
+            "/api/client/servers/0a1b2c3d/files/list",
+            "/api/client/servers/0a1b2c3d/files/download",
+            "/api/client/servers/websocket",
+            "/api/client/account",
+            "/api/admin/nodes/5f0e",
+        ] {
+            assert!(READ_ONLY.check_request(&Method::GET, path).is_ok(), "{path}");
+        }
     }
 
     #[test]

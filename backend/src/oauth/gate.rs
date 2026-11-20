@@ -14,14 +14,20 @@ use axum::{
 };
 use serde_json::json;
 use shared::{
-    GetState,
+    GetIp, GetState,
     models::{
         ByUuid,
         user::{AuthMethod, User},
         user_api_key::UserApiKey,
     },
 };
-use std::net::SocketAddr;
+use sqlx::types::ipnetwork::IpNetwork;
+use std::net::{IpAddr, SocketAddr};
+
+/// Whether a panel API key's allowed IPs (none means any) include `ip`.
+pub fn key_allows_ip(allowed: &[IpNetwork], ip: IpAddr) -> bool {
+    allowed.is_empty() || allowed.iter().any(|network| network.contains(ip))
+}
 
 /// Set on requests that arrive with an OAuth access token. Request extensions cannot be set from
 /// outside the process, so the MCP handler can trust it.
@@ -94,6 +100,7 @@ fn inner_request(
 pub async fn handle(
     state: GetState,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    ip: GetIp,
     request: Request,
 ) -> Response {
     let urls = match Urls::load(&state).await {
@@ -110,7 +117,7 @@ pub async fn handle(
 
     match bearer {
         Some(token) if token.starts_with(super::ACCESS_PREFIX) => {
-            oauth(&state, &urls, addr, request, &token).await
+            oauth(&state, &urls, addr, ip.0, request, &token).await
         }
         None if !request.headers().contains_key(header::AUTHORIZATION)
             && !request.headers().contains_key(header::COOKIE) =>
@@ -125,6 +132,7 @@ async fn oauth(
     state: &shared::State,
     urls: &Urls,
     addr: SocketAddr,
+    ip: IpAddr,
     request: Request,
     token: &str,
 ) -> Response {
@@ -155,6 +163,16 @@ async fn oauth(
             Ok(None) => return invalid(),
             Err(err) => return internal(err.into()),
         };
+
+    // The panel checks a key's allowed IPs only when it reads the key from a header, so the
+    // limits a user put on the grant's key are applied here.
+    if !key_allows_ip(&api_key.allowed_ips, ip) {
+        return (
+            StatusCode::FORBIDDEN,
+            axum::Json(json!({ "errors": ["ip address not allowed for this api key"] })),
+        )
+            .into_response();
+    }
 
     let mut request = match inner_request(request, addr, true) {
         Ok(request) => request,

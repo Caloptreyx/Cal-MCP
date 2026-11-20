@@ -14,7 +14,7 @@ import Stack from '@/elements/Stack.tsx';
 import Text from '@/elements/Text.tsx';
 import TitleCard from '@/elements/TitleCard.tsx';
 import { decideConsent, getConsent } from '../api/oauth.ts';
-import { type Consent, SCOPES, type Scope } from '../lib/oauth.ts';
+import { type Consent, redirectHost, SCOPES, type Scope } from '../lib/oauth.ts';
 import { useExtTranslations } from '../translations.ts';
 
 type Request = NonNullable<Consent['consent']>;
@@ -30,17 +30,25 @@ export default function ConsentPage() {
 
   const [request, setRequest] = useState<Request | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [returnTo, setReturnTo] = useState<string | null>(null);
   const [scope, setScope] = useState<Scope>('client');
   const [submitting, setSubmitting] = useState<'approve' | 'deny' | null>(null);
+  // Approving must never happen through a page that frames this one (clickjacking). The panel
+  // also sends frame-ancestors 'self', but reverse proxies can drop headers.
+  const framed = window.self !== window.top;
 
   useEffect(() => {
     setRequest(null);
     setError(null);
+    setReturnTo(null);
+    if (framed) return;
 
     getConsent(query)
       .then(({ redirect, consent }) => {
+        // An invalid request goes back to the client only when the user asks, so this page is
+        // not an automatic redirector to whatever URI a self-registered client chose.
         if (redirect) {
-          window.location.assign(redirect);
+          setReturnTo(redirect);
           return;
         }
         if (!consent) return;
@@ -49,7 +57,7 @@ export default function ConsentPage() {
         setScope(consent.requestedScope === 'full' && !consent.admin ? 'client' : consent.requestedScope);
       })
       .catch((err) => setError(httpErrorToHuman(err)));
-  }, [query]);
+  }, [query, framed]);
 
   const decide = (approve: boolean) => {
     setSubmitting(approve ? 'approve' : 'deny');
@@ -67,18 +75,35 @@ export default function ConsentPage() {
 
   return (
     <AccountContentContainer title={t('consent.title', {})}>
-      {error && (
+      {(error || framed) && (
         <Alert
           mb='md'
           color='red'
           icon={<FontAwesomeIcon icon={faTriangleExclamation} />}
           title={t('consent.error', {})}
         >
-          {error}
+          {framed ? t('consent.framed', {}) : error}
+        </Alert>
+      )}
+      {returnTo && (
+        <Alert
+          mb='md'
+          color='yellow'
+          icon={<FontAwesomeIcon icon={faTriangleExclamation} />}
+          title={t('consent.error', {})}
+        >
+          <Stack>
+            <Text size='sm'>{t('consent.invalid', { host: redirectHost(returnTo) })}</Text>
+            <Group>
+              <Button variant='default' onClick={() => window.location.assign(returnTo)}>
+                {t('consent.return', { host: redirectHost(returnTo) })}
+              </Button>
+            </Group>
+          </Stack>
         </Alert>
       )}
       {!request ? (
-        !error && <Spinner.Centered />
+        !error && !framed && !returnTo && <Spinner.Centered />
       ) : (
         <div className='max-w-2xl'>
           <TitleCard

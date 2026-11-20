@@ -60,12 +60,14 @@ const translations = defineTranslations({
       redirect: 'After you decide, your browser goes back to {host}:',
       loopback:
         'This client runs on your own computer (localhost). Only approve it if you started the connection yourself just now.',
-      scope: 'Access',
       apiKey:
-        'This adds an API key starting with "MCP" to your account. Disconnect the client at any time under Account > MCP.',
+        'This adds an API key starting with "MCP" to your account. It cannot manage your API keys, SSH keys, security keys, sessions, email, password or two-factor setup. Disconnect the client at any time under Account > MCP.',
       approve: 'Approve',
       deny: 'Deny',
       error: 'This request cannot be completed',
+      framed: 'This page does not work inside another page. Open it in its own browser tab.',
+      invalid: 'The app sent a request that cannot be approved. Go back to {host} to see the error there.',
+      return: 'Return to {host}',
     },
     connected: {
       title: 'Connected clients',

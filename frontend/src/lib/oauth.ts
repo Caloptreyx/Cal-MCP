@@ -5,7 +5,7 @@ export type Scope = z.infer<typeof scopeSchema>;
 
 export const SCOPES: Scope[] = ['read', 'client', 'full'];
 
-/** Either a consent request to show, or a redirect to follow right away (an error the client must see). */
+/** Either a consent request to show, or an error redirect the user can follow back to the client. */
 export const consentSchema = z.object({
   redirect: z.string().nullable(),
   consent: z
