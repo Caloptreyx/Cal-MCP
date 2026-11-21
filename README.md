@@ -4,7 +4,7 @@ MCP server for [Calagopus Panel](https://calagopus.com). It lets AI assistants s
 
 ## Requirements
 
-Calagopus Panel 1.2.0 or newer.
+Calagopus Panel 1.2.10 or newer.
 
 ## Install
 
