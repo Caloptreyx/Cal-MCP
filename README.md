@@ -2,6 +2,21 @@
 
 MCP server for [Calagopus Panel](https://calagopus.com). It lets AI assistants such as Claude, ChatGPT, Cursor and VS Code manage your panel through its API, limited to the permissions of the API key or OAuth connection they use.
 
+## Screenshots
+
+**Account → MCP**: the endpoint, ready-made setup per client, connected OAuth clients and per-key
+limits.
+
+![Account MCP page](docs/screenshots/account-mcp.png)
+
+**Connecting Claude.ai**: the user picks the access level before approving.
+
+![OAuth consent page](docs/screenshots/consent.png)
+
+**Admin settings**: branding and panel-wide restrictions for every MCP connection.
+
+![Cal MCP admin settings](docs/screenshots/admin-settings.png)
+
 ## Requirements
 
 Calagopus Panel 1.2.10 or newer.
