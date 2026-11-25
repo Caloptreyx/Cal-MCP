@@ -2,7 +2,7 @@
 name = "dev_caloptreyx_calmcp"
 description = "Model Context Protocol server for Calagopus Panel."
 authors = ["Caloptreyx"]
-version = "1.2.0"
+version = "1.2.1"
 edition = { workspace = true }
 
 [dependencies]
