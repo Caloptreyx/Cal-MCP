@@ -1195,9 +1195,9 @@ fn consent_page_shows_where_the_code_goes() {
     assert!(!validate::is_loopback_redirect(REDIRECT));
 }
 
-/// The panel answers 403 when `PermissionManager::has_user_permission` finds the permission
-/// missing from the key's `CredentialScope`, the same check `covers` runs.
-fn grant_key_scope() -> shared::models::user::CredentialScope {
+/// The user permissions a grant's api key holds. The panel answers 403 when the permission an
+/// endpoint needs is not in the key's list (`CredentialScope::covers` is plain membership).
+fn grant_key_user_permissions() -> Vec<String> {
     // A sample of what the panel defines; the real list is only filled in at runtime.
     let defined: Vec<String> = [
         "account.infos",
@@ -1221,25 +1221,13 @@ fn grant_key_scope() -> shared::models::user::CredentialScope {
     .map(String::from)
     .collect();
 
-    let to_scope = |permissions: Vec<String>| {
-        std::sync::Arc::new(
-            permissions
-                .into_iter()
-                .map(compact_str::CompactString::from)
-                .collect::<Vec<_>>(),
-        )
-    };
-    shared::models::user::CredentialScope::ApiKey {
-        user: to_scope(super::grant_user_permissions(&defined)),
-        admin: to_scope(Vec::new()),
-        server: to_scope(Vec::new()),
-    }
+    super::grant_user_permissions(&defined)
 }
 
 #[test]
 fn grant_keys_cannot_create_api_keys_or_ssh_keys() {
-    let scope = grant_key_scope();
-    let allowed = |permission: &str| scope.covers(&[permission.into()], &[], &[]);
+    let granted = grant_key_user_permissions();
+    let allowed = |permission: &str| granted.iter().any(|p| p == permission);
 
     // POST /api/client/account/api-keys, .../recreate and /ssh-keys check these; with them
     // missing, a client or full scope connection gets 403 and cannot mint a credential that
@@ -1250,6 +1238,32 @@ fn grant_keys_cannot_create_api_keys_or_ssh_keys() {
     for permission in ["servers.read", "account.infos", "api-keys.read", "ssh-keys.read", "sessions.read"] {
         assert!(allowed(permission), "{permission}");
     }
+}
+
+/// The options are deserialized, so a field the panel adds without a default would only fail
+/// when a client is approved; this catches it at test time instead.
+#[test]
+fn grant_key_options_deserialize_on_this_panel() {
+    use compact_str::CompactString;
+
+    let user_uuid = uuid::Uuid::new_v4();
+    let options = super::pg::api_key_options(
+        user_uuid,
+        "MCP Claude abc123".into(),
+        vec![CompactString::from("servers.read")],
+        Vec::new(),
+        vec![CompactString::from("files.read")],
+    )
+    .unwrap();
+
+    assert_eq!(options.user_uuid, user_uuid);
+    assert_eq!(options.name, "MCP Claude abc123");
+    assert!(options.allowed_ips.is_empty());
+    assert!(options.enabled);
+    assert_eq!(options.user_permissions, ["servers.read"]);
+    assert!(options.admin_permissions.is_empty());
+    assert_eq!(options.server_permissions, ["files.read"]);
+    assert!(options.expires.is_none());
 }
 
 #[test]

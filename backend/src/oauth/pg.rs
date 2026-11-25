@@ -73,6 +73,30 @@ fn api_key_name(client_name: &str, grant_uuid: Uuid) -> CompactString {
     }
 }
 
+/// The options for a grant's api key, built through serde rather than a struct literal: panel
+/// main (after 1.2.11) added a required `unrestricted_admin`, which older panels lack and ignore
+/// when deserializing. `false` keeps the key out of the actions reserved for an unrestricted
+/// administrator, as every api key was before that field existed.
+pub(super) fn api_key_options(
+    user_uuid: Uuid,
+    name: CompactString,
+    user_permissions: Vec<CompactString>,
+    admin_permissions: Vec<CompactString>,
+    server_permissions: Vec<CompactString>,
+) -> Result<CreateUserApiKeyOptions, serde_json::Error> {
+    serde_json::from_value(serde_json::json!({
+        "user_uuid": user_uuid,
+        "name": name,
+        "allowed_ips": [],
+        "enabled": true,
+        "user_permissions": user_permissions,
+        "admin_permissions": admin_permissions,
+        "server_permissions": server_permissions,
+        "unrestricted_admin": false,
+        "expires": null,
+    }))
+}
+
 #[async_trait::async_trait]
 impl Store for PgStore {
     async fn insert_client(&self, client: &Client) -> Result<(), anyhow::Error> {
@@ -206,21 +230,15 @@ impl Store for PgStore {
 
         let mut transaction = self.pool().begin().await?;
 
-        let (_, api_key) = UserApiKey::create_with_transaction(
-            &self.state,
-            CreateUserApiKeyOptions {
-                user_uuid: new.user_uuid,
-                name: api_key_name(&new.client_name, new.uuid),
-                allowed_ips: Vec::new(),
-                enabled: true,
-                user_permissions,
-                admin_permissions,
-                server_permissions,
-                expires: None,
-            },
-            &mut transaction,
-        )
-        .await?;
+        let options = api_key_options(
+            new.user_uuid,
+            api_key_name(&new.client_name, new.uuid),
+            user_permissions,
+            admin_permissions,
+            server_permissions,
+        )?;
+        let (_, api_key) =
+            UserApiKey::create_with_transaction(&self.state, options, &mut transaction).await?;
 
         sqlx::query(
             "INSERT INTO dev_caloptreyx_calmcp_oauth_grants
